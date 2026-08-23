@@ -1,0 +1,10 @@
+packages:
+  - "apps/**"
+  - "packages/**"
+
+minimumReleaseAge: 0
+
+hoistWorkspacePackages: false
+
+allowBuilds:
+  esbuild: false
