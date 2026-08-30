@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "agent-studio": "tsx --env-file=../../.env src/agent.ts"
+    "agent-studio": "tsx --env-file=../../.env src/agent.ts",
+    "resync": "tsx --env-file=../../.env scripts/resync.ts"
   },
   "keywords": [],
   "author": "",

@@ -29,3 +29,6 @@ packages/agent/data/
 
 # TypeScript cache
 .cache/
+
+# garmin files
+DI_CONNECT/

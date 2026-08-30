@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "agent-studio": "pnpm --filter agent agent-studio"
+    "agent-studio": "pnpm --filter agent agent-studio",
+    "lab": "pnpm --filter lab start",
+    "lab:dev": "pnpm --filter lab dev",
+    "lab:build": "pnpm --filter lab build"
   },
   "keywords": [],
   "author": "",

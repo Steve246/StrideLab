@@ -4,11 +4,11 @@ import { READY_TOOLS_INSTRUCTION } from "../prompt/instruction.js";
 
 import { createParsedCompletion, createTool } from "@anvia/core";
 import { getModel } from "../providers/openai.js";
-import { DATA_DIR } from "../providers/dataDirectory.js";
+import { DATA_DIR, READINESS_DIR } from "../providers/dataDirectory.js";
+import { loadRecentEnrichment } from "../garmin/diConnect.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const READY_DIR = path.resolve(DATA_DIR, "../readiness");
 const ACTIVITIES_FILE = path.join(DATA_DIR, "activities.json");
 
 export const ReadinessTool = z.object({
@@ -60,15 +60,47 @@ export const readyTools = createTool({
       return !Number.isNaN(t) && t >= cutoff;
     });
 
+    const enrichment = await loadRecentEnrichment(days);
+
     const parsed = await createParsedCompletion(getModel(), {
       schema: ReadinessTool,
       instructions: READY_TOOLS_INSTRUCTION,
-      input: `Analyze readiness from the last ${days} days:\n\n${JSON.stringify(recent, null, 2)}`,
+      input: `Analyze readiness from the last ${days} days.
+
+## Recent activities
+${JSON.stringify(recent, null, 2)}
+
+## Enrichment (from DI_CONNECT — use when present; never invent missing values)
+### Sleep
+${JSON.stringify(enrichment.sleep, null, 2)}
+
+### Daily (resting HR, steps, intensity minutes)
+${JSON.stringify(enrichment.daily, null, 2)}
+
+### Health status (HRV etc.)
+${JSON.stringify(enrichment.health_status, null, 2)}
+
+### VO2max trend
+${JSON.stringify(enrichment.vo2max, null, 2)}
+
+### Race predictions (seconds)
+${JSON.stringify(enrichment.race_predictions, null, 2)}
+`,
     });
 
-    await fs.mkdir(READY_DIR, { recursive: true });
-    const out = path.join(READY_DIR, `${parsed.data.date}.json`);
+    await fs.mkdir(READINESS_DIR, { recursive: true });
+    const out = path.join(READINESS_DIR, `${parsed.data.date}.json`);
     await fs.writeFile(out, JSON.stringify(parsed.data, null, 2));
-    return { saved: out, readiness: parsed.data, activityCount: recent.length };
+    return {
+      saved: out,
+      readiness: parsed.data,
+      activityCount: recent.length,
+      enrichment: {
+        sleep_days: enrichment.sleep.length,
+        daily_days: enrichment.daily.length,
+        health_days: enrichment.health_status.length,
+        vo2_points: enrichment.vo2max.length,
+      },
+    };
   },
 });
