@@ -123,12 +123,18 @@ a {
   justify-content: center;
   width: 2.25rem;
   height: 2.25rem;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.65rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
   color: var(--primary-foreground);
   background: var(--primary);
+}
+
+.lab-rail-mark svg {
+  width: 1.55rem;
+  height: 1.55rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: bevel;
+  stroke-width: 2.25;
 }
 
 .lab-rail-nav {

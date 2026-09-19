@@ -12,7 +12,7 @@ import { exportTools } from "./tools/expotTools.js";
 import { vizTools } from "./tools/vizTools.js";
 
 const agent = new AgentBuilder("running-lab", getModel())
-  .name("Steven Running Labs")
+  .name("StrideLab Coach")
   .instructions(getBaseAgentInstruction())
   .tool(webSearch)
   .tool(garTools)

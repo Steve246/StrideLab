@@ -1,4 +1,4 @@
-# Steven Personal Running Lab
+# StrideLab
 
 Personal endurance coaching lab powered by Anvia agents and tools.
 

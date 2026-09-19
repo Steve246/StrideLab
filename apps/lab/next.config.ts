@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Keep the Next.js dev indicator from covering the dashboard controls.
+  devIndicators: false,
   output: "standalone",
   // Vega pulls optional Node `canvas` via vega-canvas; Lab only needs browser SVG.
   serverExternalPackages: ["vega", "vega-lite", "vega-embed"],

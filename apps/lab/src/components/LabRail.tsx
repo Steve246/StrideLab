@@ -61,8 +61,13 @@ export function LabRail({
 }: Props) {
   return (
     <aside className="lab-rail" aria-label="Lab navigation">
-      <div className="lab-rail-brand" title="Steven Training Lab">
-        <span className="lab-rail-mark">STL</span>
+      <div className="lab-rail-brand" title="StrideLab">
+        <span className="lab-rail-mark" aria-label="StrideLab">
+          <svg viewBox="0 0 32 32" role="img" aria-hidden="true">
+            <path d="M7 22.5 12.5 9l4 9 3.5-6 5 10" />
+            <path d="M5 25h22" />
+          </svg>
+        </span>
       </div>
 
       <nav className="lab-rail-nav">

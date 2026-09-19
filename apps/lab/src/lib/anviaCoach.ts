@@ -33,8 +33,8 @@ async function buildCoachAgent() {
   loadLabEnv();
   const { getModel } = await import("../../../../packages/agent/src/providers/openai");
   return new AgentBuilder("running-lab-coach", getModel())
-    .name("Steven Running Lab Coach")
-    .instructions("You are Steven's personal running coach. Use tools for athlete data, never invent metrics, separate external research from athlete data, and explain data gaps. Keep answers concise and use Markdown.")
+    .name("StrideLab Coach")
+    .instructions("You are the athlete's personal running coach. Use tools for athlete data, never invent metrics, separate external research from athlete data, and explain data gaps. Keep answers concise and use Markdown.")
     .tools((Object.keys(TOOL_INPUTS) as ToolName[]).map(coachTool))
     .defaultMaxTurns(6)
     .build();

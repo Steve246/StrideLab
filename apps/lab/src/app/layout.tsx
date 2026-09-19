@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Steven Training Lab",
-  description: "Personal running dashboard — synced Garmin data + coach prompt",
+  title: "StrideLab",
+  description: "Running analytics dashboard with Garmin data and an AI coach",
 };
 
 export default function RootLayout({
