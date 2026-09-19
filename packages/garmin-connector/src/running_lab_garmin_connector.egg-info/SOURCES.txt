@@ -1,0 +1,9 @@
+pyproject.toml
+src/garmin_connector/__init__.py
+src/garmin_connector/__main__.py
+src/running_lab_garmin_connector.egg-info/PKG-INFO
+src/running_lab_garmin_connector.egg-info/SOURCES.txt
+src/running_lab_garmin_connector.egg-info/dependency_links.txt
+src/running_lab_garmin_connector.egg-info/entry_points.txt
+src/running_lab_garmin_connector.egg-info/requires.txt
+src/running_lab_garmin_connector.egg-info/top_level.txt

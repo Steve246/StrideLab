@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: running-lab-garmin-connector
+Version: 0.1.0
+Requires-Python: >=3.10
+Requires-Dist: garminconnect>=0.2.25
+Requires-Dist: curl-cffi>=0.7
+Provides-Extra: browser
+Requires-Dist: playwright>=1.45; extra == "browser"

@@ -1,0 +1,36 @@
+services:
+  lab:
+    build:
+      context: .
+      dockerfile: Dockerfile.lab
+    env_file:
+      - .env.docker
+    environment:
+      NODE_ENV: production
+      PORT: 4030
+      GARMIN_LIVE_ENABLED: "false"
+      GARMIN_EXPORT_DIR: /data/garmin/DI_CONNECT
+    volumes:
+      - lab-data:/app/packages/agent/data
+      - ${GARMIN_EXPORT_HOST_DIR:?Set GARMIN_EXPORT_HOST_DIR to your DI_CONNECT parent}:/data/garmin:ro
+    expose:
+      - "4030"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - lab
+    restart: unless-stopped
+
+volumes:
+  lab-data:
+  caddy-data:
+  caddy-config:

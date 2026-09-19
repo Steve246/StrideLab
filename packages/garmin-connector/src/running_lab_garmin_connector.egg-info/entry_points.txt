@@ -1,0 +1,2 @@
+[console_scripts]
+garmin-connector = garmin_connector.__main__:main

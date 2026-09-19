@@ -89,24 +89,31 @@ async function walkFiles(dir: string, matcher: (name: string) => boolean): Promi
   return out;
 }
 
-/** Find `*_summarizedActivities.json` under DI_CONNECT (prefer DI-Connect-Fitness). */
-export async function findSummarizedActivitiesFile(
+/** Find all `*_summarizedActivities.json` under DI_CONNECT (prefer DI-Connect-Fitness). */
+export async function findSummarizedActivitiesFiles(
   diConnectRoot: string,
-): Promise<string | null> {
+): Promise<string[]> {
   const fitnessDir = path.join(diConnectRoot, "DI-Connect-Fitness");
   const inFitness = await walkFiles(fitnessDir, (n) =>
     n.endsWith("summarizedActivities.json"),
   );
   if (inFitness.length > 0) {
     inFitness.sort();
-    return inFitness[inFitness.length - 1]!;
+    return inFitness;
   }
   const anywhere = await walkFiles(diConnectRoot, (n) =>
     n.endsWith("summarizedActivities.json"),
   );
-  if (anywhere.length === 0) return null;
   anywhere.sort();
-  return anywhere[anywhere.length - 1]!;
+  return anywhere;
+}
+
+/** @deprecated Prefer findSummarizedActivitiesFiles — Garmin often splits history across multiple files. */
+export async function findSummarizedActivitiesFile(
+  diConnectRoot: string,
+): Promise<string | null> {
+  const files = await findSummarizedActivitiesFiles(diConnectRoot);
+  return files.at(-1) ?? null;
 }
 
 function num(v: unknown): number | null {
@@ -252,47 +259,70 @@ function round(n: number, digits: number): number {
 }
 
 export async function loadSummarizedActivities(
-  filePath: string,
+  filePathOrPaths: string | string[],
 ): Promise<Activity[]> {
-  const text = await fs.readFile(filePath, "utf8");
-  const parsed = JSON.parse(text) as unknown;
-  const sourceFile = path.basename(filePath);
+  const filePaths = Array.isArray(filePathOrPaths)
+    ? filePathOrPaths
+    : [filePathOrPaths];
 
-  let rows: Record<string, unknown>[] = [];
-  if (Array.isArray(parsed)) {
-    for (const block of parsed) {
-      if (
-        block &&
-        typeof block === "object" &&
-        Array.isArray(
-          (block as { summarizedActivitiesExport?: unknown })
-            .summarizedActivitiesExport,
-        )
-      ) {
-        rows.push(
-          ...((block as { summarizedActivitiesExport: Record<string, unknown>[] })
-            .summarizedActivitiesExport),
-        );
-      } else if (block && typeof block === "object" && "activityId" in block) {
-        rows.push(block as Record<string, unknown>);
+  const rows: Record<string, unknown>[] = [];
+  const sourceFiles: string[] = [];
+
+  for (const filePath of filePaths) {
+    const text = await fs.readFile(filePath, "utf8");
+    const parsed = JSON.parse(text) as unknown;
+    sourceFiles.push(path.basename(filePath));
+
+    if (Array.isArray(parsed)) {
+      for (const block of parsed) {
+        if (
+          block &&
+          typeof block === "object" &&
+          Array.isArray(
+            (block as { summarizedActivitiesExport?: unknown })
+              .summarizedActivitiesExport,
+          )
+        ) {
+          rows.push(
+            ...((
+              block as {
+                summarizedActivitiesExport: Record<string, unknown>[];
+              }
+            ).summarizedActivitiesExport),
+          );
+        } else if (block && typeof block === "object" && "activityId" in block) {
+          rows.push(block as Record<string, unknown>);
+        }
       }
+    } else if (
+      parsed &&
+      typeof parsed === "object" &&
+      Array.isArray(
+        (parsed as { summarizedActivitiesExport?: unknown })
+          .summarizedActivitiesExport,
+      )
+    ) {
+      rows.push(
+        ...(
+          parsed as {
+            summarizedActivitiesExport: Record<string, unknown>[];
+          }
+        ).summarizedActivitiesExport,
+      );
     }
-  } else if (
-    parsed &&
-    typeof parsed === "object" &&
-    Array.isArray(
-      (parsed as { summarizedActivitiesExport?: unknown }).summarizedActivitiesExport,
-    )
-  ) {
-    rows = (parsed as { summarizedActivitiesExport: Record<string, unknown>[] })
-      .summarizedActivitiesExport;
   }
+
+  const sourceFile = sourceFiles.join("+") || "summarizedActivities.json";
 
   // Pass 1: map without TRIMP to collect max HR
   const draft: Activity[] = [];
+  const seen = new Set<string>();
   for (const row of rows) {
     const mapped = mapSummarizedActivity(row, sourceFile, null);
-    if (mapped) draft.push(mapped);
+    if (!mapped) continue;
+    if (seen.has(mapped.activity_id)) continue;
+    seen.add(mapped.activity_id);
+    draft.push(mapped);
   }
 
   const dailyRhr = await loadDailyRhrValues();

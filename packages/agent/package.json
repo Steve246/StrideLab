@@ -6,7 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "agent-studio": "tsx --env-file=../../.env src/agent.ts",
-    "resync": "tsx --env-file=../../.env scripts/resync.ts"
+    "resync": "tsx --env-file=../../.env scripts/resync.ts",
+    "mcp": "tsx --env-file=../../.env scripts/mcp.ts"
+    ,"eval:manual-first": "tsx --env-file=../../.env scripts/eval-manual-first.ts"
   },
   "keywords": [],
   "author": "",

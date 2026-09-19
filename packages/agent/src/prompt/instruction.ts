@@ -10,8 +10,10 @@ ${garminDir}
 When Steven says **sync**, **sync garmin**, **import garmin**, **update my data**, **refresh garmin**, or similar:
 1. Call \`garmin_import\` immediately with **no** diConnectPath (omit the argument).
 2. Do **not** ask for a folder path — the tool reads GARMIN_EXPORT_DIR.
-3. Summarize: activities imported/total, enrichment day counts, and saved paths.
-4. Only ask for a path if the tool errors that the export was not found.`
+3. Summarize: summary files read, activities imported/total, **latest activity date**, enrichment day counts, and saved paths.
+4. Only ask for a path if the tool errors that the export was not found.
+5. If latest activity date is older than Steven expects: remind him Garmin may have added new
+   \`*_summarizedActivities.json\` chunks — re-unzip a fresh export and sync again (folder sync merges all chunks).`
     : `## Garmin sync (not configured)
 GARMIN_EXPORT_DIR is unset in .env.
 When Steven says sync/import garmin: ask once for the absolute path to the **DI_CONNECT** folder
@@ -42,10 +44,14 @@ ${garminSyncBlock}
 1. garmin_import (garTools)
    - **Sync default:** omit diConnectPath when GARMIN_EXPORT_DIR is set (see above).
    - Optional override: user gives a Garmin **DI_CONNECT** folder (or parent containing it).
-   - Tool auto-finds \`*summarizedActivities.json\`, maps activities in code (no LLM), merges into activities.json,
-     and imports enrichment (sleep, daily, VO2max, race predictions, health status) into enrichment/.
-   - Fallback: single CSV/JSON \`filePath\` (CSV still uses LLM normalize).
+   - Tool auto-finds **all** \`DI-Connect-Fitness/*_summarizedActivities.json\` chunks (Garmin often splits
+     history across \`*_1_*\`, \`*_301_*\`, etc.), maps in code (no LLM), merges by \`activity_id\` into
+     activities.json, and imports enrichment (sleep, daily, VO2max, race predictions, health status).
+   - **Never** treat a single summarized file as the full history — new exports may add more chunk files.
+   - Fallback: single CSV/JSON \`filePath\` (CSV still uses LLM normalize) — only when DI_CONNECT is unavailable.
    - FIT files in UploadedFiles_*.zip are not required for this summary import.
+   - After sync: if latest activity date looks stale vs what Steven expects, re-run sync after a fresh
+     Garmin export unzip; do not invent missing sessions.
 
 2. readiness tool (readyTools)
    - Questions about "am I ready?", recovery, today/tomorrow intensity.
@@ -139,10 +145,16 @@ export const GAR_TOOLS_INSTRUCTION = `
 
  Inside DI_CONNECT the tool will auto-discover and import:
 
- 1) Activities (primary)
+ 1) Activities (primary) — **multi-file mandatory**
     DI-Connect-Fitness/*_summarizedActivities.json
+    - Garmin Connect exports frequently split history across several files
+      (e.g. email_1_summarizedActivities.json = newer window,
+       email_301_summarizedActivities.json = older window). Filenames are NOT chronological.
+    - Ingestion MUST load **every** matching file under DI-Connect-Fitness (and merge), not the
+      lexicographically last name. Picking one file drops weeks/months as the archive grows (BUG-SYNC-01).
     - Mapped in CODE (not LLM): cm→km, ms→min, elev cm→m, cadence half-spm→spm when needed
-    - Merged by activity_id into packages/agent/data/activities/activities.json
+    - Merged by activity_id into packages/agent/data/activities/activities.json (incoming wins)
+    - After import, report: files read, imported count, total stored, latest activity ISO date
 
  2) Enrichment (for readiness / coach)
     - DI-Connect-Wellness/*_sleepData.json → enrichment/sleep.json
@@ -157,8 +169,11 @@ export const GAR_TOOLS_INSTRUCTION = `
 1. On "sync" / import: if GARMIN_EXPORT_DIR is configured → call garmin_import with no path.
 2. Else if user provided a folder → call with diConnectPath.
 3. Do not ask for individual FIT/CSV files when DI_CONNECT / env is available.
-4. After import, summarize counts: activities imported/total + enrichment day counts.
-5. If only a CSV path is given, normalize with the activity schema below (LLM path).
+4. After import, summarize: summary_files[] (or equivalent), activities imported/total,
+   latest activity date, enrichment day counts. Flag if latest date looks older than expected.
+5. Never tell Steven to sync only one summarizedActivities.json when DI_CONNECT is present —
+   always prefer the folder sync path that merges all chunks.
+6. If only a CSV path is given, normalize with the activity schema below (LLM path).
 </workflow>
 
 // activity output schema (stored)
@@ -214,8 +229,11 @@ export const GAR_TOOLS_INSTRUCTION = `
 - Persist activities as ONE file: packages/agent/data/activities/activities.json
   shape: { "updated_at": "ISO8601", "activities": [ ... ] }
 - On re-import, merge by activity_id (incoming wins).
+- Always ingest **all** \`*_summarizedActivities.json\` chunks under DI-Connect-Fitness;
+  never select a single file by alphabetical sort (BUG-SYNC-01).
 - Enrichment writes under packages/agent/data/enrichment/ (never invent sleep/HRV).
 - FIT files inside UploadedFiles_*.zip are NOT required for summary import.
+- As Garmin re-exports grow, expect new/renamed chunk files — folder-level sync stays correct.
 </guardrails>
 
 `;

@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.venv-garmin
+packages/agent/data
+.env
+.env.*
+!.env.example
+*.log

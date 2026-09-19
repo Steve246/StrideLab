@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Area,
   Bar,
   BarChart,
   CartesianGrid,
@@ -14,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ForecastWeek, WeekBucket } from "@/lib/loadMath";
+import type { ForecastWeek, HrvWeek, WeekBucket } from "@/lib/loadMath";
 import { formatPace } from "@/lib/loadMath";
 
 function weekLabel(iso: string): string {
@@ -24,9 +23,11 @@ function weekLabel(iso: string): string {
 export function WeeklyMileageLoad({
   weeks,
   forecast,
+  hrv = [],
 }: {
   weeks: WeekBucket[];
   forecast: ForecastWeek[];
+  hrv?: HrvWeek[];
 }) {
   const rows = weeks.map((w) => ({
     week: weekLabel(w.week_start),
@@ -46,34 +47,58 @@ export function WeeklyMileageLoad({
     effort_shape: Math.round((w.trimp / maxTrimp) * 1000) / 10,
   }));
 
-  const loadForecast = forecast.map((f) => ({
-    week: weekLabel(f.week_start),
-    actual: f.kind === "history" ? f.trimp : null,
-    expected: f.kind === "forecast" ? f.expected_trimp : null,
-    low: f.kind === "forecast" ? f.conservative_trimp : null,
-    high: f.kind === "forecast" ? f.aggressive_trimp : null,
-    band:
-      f.kind === "forecast" &&
-      f.conservative_trimp != null &&
-      f.aggressive_trimp != null
-        ? f.aggressive_trimp - f.conservative_trimp
-        : null,
-    base: f.kind === "forecast" ? f.conservative_trimp : null,
-  }));
+  // Last 8 history weeks + forecast — avoid null-stack Area bugs in Recharts.
+  const history = forecast.filter((f) => f.kind === "history");
+  const future = forecast.filter((f) => f.kind === "forecast");
+  const histTail = history.slice(-8);
+  const lastHist = histTail[histTail.length - 1];
 
-  // Bridge last history into forecast for visual continuity
-  const lastHist = [...forecast].reverse().find((f) => f.kind === "history");
-  const firstFcIdx = loadForecast.findIndex((r) => r.expected != null);
-  if (lastHist && firstFcIdx > 0) {
-    loadForecast[firstFcIdx - 1] = {
-      ...loadForecast[firstFcIdx - 1],
-      expected: lastHist.trimp,
-      low: lastHist.trimp,
-      high: lastHist.trimp,
-      base: lastHist.trimp,
-      band: 0,
-    };
-  }
+  const loadForecast = [
+    ...histTail.map((f) => ({
+      week: weekLabel(f.week_start),
+      kind: "history" as const,
+      actual: f.trimp ?? 0,
+      expected: null as number | null,
+      low: null as number | null,
+      high: null as number | null,
+    })),
+    // Bridge point so forecast line connects from last actual
+    ...(lastHist
+      ? [
+          {
+            week: `${weekLabel(lastHist.week_start)}→`,
+            kind: "bridge" as const,
+            actual: lastHist.trimp ?? 0,
+            expected: lastHist.trimp ?? 0,
+            low: lastHist.trimp ?? 0,
+            high: lastHist.trimp ?? 0,
+          },
+        ]
+      : []),
+    ...future.map((f) => ({
+      week: `F ${weekLabel(f.week_start)}`,
+      kind: "forecast" as const,
+      actual: null as number | null,
+      expected: f.expected_trimp,
+      low: f.conservative_trimp,
+      high: f.aggressive_trimp,
+    })),
+  ];
+
+  const yMax = Math.max(
+    ...loadForecast.flatMap((r) =>
+      [r.actual, r.expected, r.high].filter((n): n is number => n != null),
+    ),
+    1,
+  );
+
+  const hrvRows = hrv.map((h) => ({
+    week: weekLabel(h.week_start),
+    avg: h.avg_hrv,
+    min: h.min_hrv,
+    max: h.max_hrv,
+    inRange: h.pct_in_range,
+  }));
 
   return (
     <div className="chart-grid">
@@ -132,7 +157,7 @@ export function WeeklyMileageLoad({
                 type="monotone"
                 dataKey="pace"
                 name="Pace"
-                stroke="#c47f17"
+                stroke="#0d9488"
                 strokeWidth={2.2}
                 dot={{ r: 3 }}
                 connectNulls
@@ -143,20 +168,20 @@ export function WeeklyMileageLoad({
       </section>
 
       <section className="panel half">
-        <h2>Weekly average heart rate</h2>
-        <p className="note">Average bpm across sessions that recorded HR.</p>
+        <h2>Weekly average HR</h2>
+        <p className="note">Average heart rate across sessions that recorded HR.</p>
         <div style={{ width: "100%", height: 200 }}>
           <ResponsiveContainer>
             <LineChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} width={36} domain={["auto", "auto"]} />
+              <YAxis tick={{ fontSize: 11 }} width={40} domain={["auto", "auto"]} />
               <Tooltip formatter={(v: number) => [`${v} bpm`, "HR"]} />
               <Line
                 type="monotone"
                 dataKey="hr"
-                name="HR"
-                stroke="#b33a3a"
+                name="Avg HR"
+                stroke="#b45309"
                 strokeWidth={2.2}
                 dot={{ r: 3 }}
                 connectNulls
@@ -168,10 +193,7 @@ export function WeeklyMileageLoad({
 
       <section className="panel half">
         <h2>Weekly elevation</h2>
-        <p className="note">
-          Climbing load matters for trail/ultra athletes (volume beyond flat
-          km).
-        </p>
+        <p className="note">Total climb per week in metres.</p>
         <div style={{ width: "100%", height: 200 }}>
           <ResponsiveContainer>
             <BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
@@ -182,7 +204,7 @@ export function WeeklyMileageLoad({
               <Bar
                 dataKey="elev"
                 name="Elevation m"
-                fill="#5b7c99"
+                fill="#78716c"
                 radius={[4, 4, 0, 0]}
               />
             </BarChart>
@@ -190,18 +212,12 @@ export function WeeklyMileageLoad({
         </div>
       </section>
 
-      <section className="panel">
-        <h2>Distance vs effort (same shape scale)</h2>
+      <section className="panel half">
+        <h2>Effort vs distance shape</h2>
         <p className="note">
-          Both lines are scaled 0–100% of their own max so you can compare{" "}
-          <em>shapes</em>. If blue (effort) sits above green (distance), that
-          week felt harder than the miles alone.
+          Both scaled 0–100 so you can see when effort rises faster than mileage.
         </p>
-        <div className="legend">
-          <span style={{ background: "#1d6f5a" }}>Distance shape</span>
-          <span style={{ background: "#2c5282" }}>Effort shape</span>
-        </div>
-        <div style={{ width: "100%", height: 220 }}>
+        <div style={{ width: "100%", height: 200 }}>
           <ResponsiveContainer>
             <LineChart
               data={effortShape}
@@ -209,7 +225,7 @@ export function WeeklyMileageLoad({
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} width={36} />
+              <YAxis tick={{ fontSize: 11 }} width={36} domain={[0, 100]} />
               <Tooltip />
               <Legend />
               <Line
@@ -234,64 +250,147 @@ export function WeeklyMileageLoad({
         </div>
       </section>
 
-      <section className="panel">
-        <h2>Load forecast (next 4 weeks)</h2>
+      <section className="panel half">
+        <h2>Weekly HRV</h2>
         <p className="note">
-          Solid = actual TRIMP. Dashed orange = expected load from your recent
-          4-week average. Shaded band = conservative → aggressive range. Not a
-          medical prediction — a planning guide.
+          Garmin overnight HRV (ms) from health status — higher is generally
+          better recovery. Dashed = % of days in Garmin&apos;s baseline range.
         </p>
-        <div className="legend">
-          <span style={{ background: "#2c5282" }}>Actual TRIMP</span>
-          <span style={{ background: "#ff9500" }}>Expected forecast</span>
-        </div>
-        <div style={{ width: "100%", height: 260 }}>
+        <div style={{ width: "100%", height: 200 }}>
           <ResponsiveContainer>
             <ComposedChart
-              data={loadForecast}
+              data={hrvRows}
               margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="week" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} width={40} />
+              <YAxis
+                yAxisId="hrv"
+                tick={{ fontSize: 11 }}
+                width={36}
+                domain={["auto", "auto"]}
+              />
+              <YAxis
+                yAxisId="pct"
+                orientation="right"
+                tick={{ fontSize: 11 }}
+                width={36}
+                domain={[0, 100]}
+              />
               <Tooltip />
               <Legend />
-              <Area
+              <Bar
+                yAxisId="hrv"
+                dataKey="avg"
+                name="Avg HRV"
+                fill="#0f766e"
+                radius={[4, 4, 0, 0]}
+              />
+              <Line
+                yAxisId="pct"
                 type="monotone"
-                dataKey="base"
-                stackId="band"
-                stroke="none"
-                fill="transparent"
+                dataKey="inRange"
+                name="% in range"
+                stroke="#64748b"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                dot={false}
                 connectNulls
               />
-              <Area
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Load forecast (next 4 weeks)</h2>
+        <p className="note">
+          EWMA of completed weeks (TrainingPeaks-style chronic load proxy), then
+          project maintenance TRIMP with a −10% / +ramp band. Not a medical
+          prediction — a planning guide. Labels marked <strong>F</strong> are
+          forecast weeks.
+        </p>
+        <div className="legend">
+          <span style={{ background: "#2c5282" }}>Actual TRIMP</span>
+          <span style={{ background: "#ff9500" }}>Expected forecast</span>
+          <span style={{ background: "#fdba74" }}>Conservative–aggressive</span>
+        </div>
+        {future.length === 0 ||
+        future.every((f) => (f.expected_trimp ?? 0) === 0) ? (
+          <p className="note">
+            No forecast yet — need TRIMP history from synced activities.
+          </p>
+        ) : (
+          <ul className="forecast-kpis">
+            {future.map((f) => (
+              <li key={f.week_start}>
+                <span>{weekLabel(f.week_start)}</span>
+                <strong>{f.expected_trimp ?? "—"}</strong>
+                <em>
+                  {f.conservative_trimp ?? "—"}–{f.aggressive_trimp ?? "—"} ·{" "}
+                  {f.expected_km ?? "—"} km
+                </em>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div style={{ width: "100%", height: 280 }}>
+          <ResponsiveContainer>
+            <ComposedChart
+              data={loadForecast}
+              margin={{ top: 8, right: 12, left: 0, bottom: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                width={44}
+                domain={[0, Math.ceil(yMax * 1.15)]}
+              />
+              <Tooltip />
+              <Legend />
+              <Line
                 type="monotone"
-                dataKey="band"
-                name="Forecast range"
-                stackId="band"
-                stroke="none"
-                fill="#ff9500"
-                fillOpacity={0.2}
+                dataKey="high"
+                name="Aggressive"
+                stroke="#fdba74"
+                strokeWidth={1.5}
+                strokeDasharray="2 4"
+                dot={false}
                 connectNulls
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="low"
+                name="Conservative"
+                stroke="#fdba74"
+                strokeWidth={1.5}
+                strokeDasharray="2 4"
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
                 dataKey="actual"
                 name="Actual TRIMP"
                 stroke="#2c5282"
-                strokeWidth={2.4}
-                dot={false}
+                strokeWidth={2.6}
+                dot={{ r: 3 }}
                 connectNulls
+                isAnimationActive={false}
               />
               <Line
                 type="monotone"
                 dataKey="expected"
                 name="Expected forecast"
                 stroke="#ff9500"
-                strokeWidth={2.2}
+                strokeWidth={2.4}
                 strokeDasharray="6 4"
-                dot={false}
+                dot={{ r: 3 }}
                 connectNulls
+                isAnimationActive={false}
               />
             </ComposedChart>
           </ResponsiveContainer>

@@ -1,0 +1,5 @@
+garminconnect>=0.2.25
+curl-cffi>=0.7
+
+[browser]
+playwright>=1.45

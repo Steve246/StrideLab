@@ -3,11 +3,13 @@ import path from "node:path";
 import { DATA_DIR, ENRICHMENT_DIR } from "../providers/dataDirectory.js";
 import type { Activity } from "../schemas/activity.js";
 import {
-  findSummarizedActivitiesFile,
+  findSummarizedActivitiesFiles,
   importDiConnectEnrichment,
   loadSummarizedActivities,
   normalizeDiConnectRoot,
 } from "./diConnect.js";
+import { beginSyncRun, finishSyncRun, updateSyncRun } from "./syncLedger.js";
+import { writeContextSnapshot } from "./contextSnapshot.js";
 
 const ACTIVITIES_FILE = path.join(DATA_DIR, "activities.json");
 
@@ -47,16 +49,31 @@ async function mergeAndSaveActivities(incoming: Activity[]) {
  * Used by garmin_import tool and by Training Lab Resync button.
  */
 export async function syncDiConnect(diConnectPath?: string) {
+  const requestedWindow: { from?: string } = {};
+  if (diConnectPath) requestedWindow.from = diConnectPath;
+  const run = await beginSyncRun({
+    source: "manual_export",
+    mode: "manual",
+    requestedWindow,
+  });
+  if (run.status === "succeeded") return run;
   const root = await normalizeDiConnectRoot(diConnectPath);
-  const summaryFile = await findSummarizedActivitiesFile(root);
-  if (!summaryFile) {
+  const summaryFiles = await findSummarizedActivitiesFiles(root);
+  if (summaryFiles.length === 0) {
     throw new Error(
       `No *summarizedActivities.json found under ${root}. Expected DI-Connect-Fitness/.`,
     );
   }
 
   const enrichment = await importDiConnectEnrichment(root);
-  const incoming = await loadSummarizedActivities(summaryFile);
+  // Garmin often splits history across multiple summarizedActivities files
+  // (e.g. *_1_* = recent, *_301_* = older). Import all — don't pick one by name.
+  const incoming = await loadSummarizedActivities(summaryFiles);
+  await updateSyncRun(run.job_id, {
+    checkpoint: summaryFiles.at(-1) ?? null,
+    pages_completed: summaryFiles.length,
+    records_seen: incoming.length,
+  });
   const { merged } = await mergeAndSaveActivities(incoming);
   const withTrimp = incoming.filter((a) => a.trimp != null).length;
 
@@ -69,10 +86,11 @@ export async function syncDiConnect(diConnectPath?: string) {
     athlete_hr = null;
   }
 
-  return {
+  const result = {
     mode: "di_connect" as const,
     di_connect_root: root,
-    summary_file: summaryFile,
+    summary_files: summaryFiles,
+    summary_file: summaryFiles[summaryFiles.length - 1],
     saved: ACTIVITIES_FILE,
     imported: incoming.length,
     total: merged.length,
@@ -81,4 +99,7 @@ export async function syncDiConnect(diConnectPath?: string) {
     athlete_hr,
     enrichment,
   };
+  await finishSyncRun(run.job_id, { status: "succeeded", warnings: [], error_code: null });
+  await writeContextSnapshot();
+  return result;
 }

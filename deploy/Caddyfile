@@ -1,0 +1,3 @@
+{$LAB_DOMAIN:localhost} {
+  reverse_proxy lab:4030
+}

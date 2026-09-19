@@ -8,7 +8,10 @@
     "agent-studio": "pnpm --filter agent agent-studio",
     "lab": "pnpm --filter lab start",
     "lab:dev": "pnpm --filter lab dev",
-    "lab:build": "pnpm --filter lab build"
+    "lab:dev:clean": "pnpm --filter lab dev:clean",
+    "lab:build": "pnpm --filter lab build",
+    "garmin:setup": "python3 -m venv .venv-garmin && .venv-garmin/bin/python -m pip install -e packages/garmin-connector"
+    ,"docker:manual": "docker compose -f docker-compose.manual.yml --env-file .env.docker up --build"
   },
   "keywords": [],
   "author": "",

@@ -58,6 +58,16 @@ export type ForecastWeek = {
   aggressive_trimp: number | null;
 };
 
+export type HrvWeek = {
+  week_start: string;
+  avg_hrv: number | null;
+  min_hrv: number | null;
+  max_hrv: number | null;
+  days_measured: number;
+  days_in_range: number;
+  pct_in_range: number | null;
+};
+
 export type AcrPoint = {
   date: string;
   acute: number;
@@ -295,23 +305,40 @@ export function buildWeeklySeries(
 }
 
 /**
- * History weeks + next 4 forecast weeks (conservative / expected / aggressive).
- * Method mirrors agent fitTools projection from chronic weekly average.
+ * EWMA of weekly load — TrainingPeaks-style chronic planning baseline.
+ * alpha ≈ 2/(n+1) for an n-week memory (default n=4 → alpha=0.4).
+ */
+function ewma(values: number[], alpha = 0.4): number {
+  if (values.length === 0) return 0;
+  let v = values[0];
+  for (let i = 1; i < values.length; i++) {
+    v = alpha * values[i] + (1 - alpha) * v;
+  }
+  return v;
+}
+
+/**
+ * History + next N forecast weeks.
+ *
+ * Method (practical Banister / TrainingPeaks planning, not full IR fit):
+ * 1. Prefer completed weeks only (drop in-progress current week from baseline).
+ * 2. Baseline = EWMA of last up to 4 completed weeks (chronic load proxy).
+ * 3. Project maintenance load with ±10% band; aggressive ramps +5%/week capped
+ *    at +10% vs baseline (classic weekly progression guardrail).
  */
 export function buildForecastSeries(
   weekly: WeekBucket[],
   asOf: Date,
   forecastWeeks = 4,
 ): ForecastWeek[] {
-  const recent = weekly.slice(-4);
-  const avgKm =
-    recent.length > 0
-      ? recent.reduce((s, w) => s + w.distance_km, 0) / recent.length
-      : 0;
-  const avgTrimp =
-    recent.length > 0
-      ? recent.reduce((s, w) => s + w.trimp, 0) / recent.length
-      : 0;
+  const completed =
+    weekly.length > 1 ? weekly.slice(0, -1) : weekly.slice();
+  const recent = completed.slice(-4).filter((w) => w.sessions > 0 || w.trimp > 0);
+  const basis = recent.length > 0 ? recent : completed.slice(-4);
+  const kmSeries = basis.map((w) => w.distance_km);
+  const trimpSeries = basis.map((w) => w.trimp);
+  const baseKm = ewma(kmSeries);
+  const baseTrimp = ewma(trimpSeries);
 
   const history: ForecastWeek[] = weekly.map((w) => ({
     week_start: w.week_start,
@@ -330,12 +357,13 @@ export function buildForecastSeries(
   const forecast: ForecastWeek[] = [];
   for (let i = 0; i < forecastWeeks; i++) {
     const week_start = isoDate(addDays(nextMonday, i * 7));
-    const expected_km = round1(avgKm);
-    const conservative_km = round1(avgKm * 0.9);
-    const aggressive_km = round1(Math.min(avgKm * 1.1, avgKm + 5));
-    const expected_trimp = round1(avgTrimp);
-    const conservative_trimp = round1(avgTrimp * 0.9);
-    const aggressive_trimp = round1(avgTrimp * 1.1);
+    const ramp = Math.min(1.1, 1 + 0.05 * i);
+    const expected_km = round1(baseKm);
+    const conservative_km = round1(baseKm * 0.9);
+    const aggressive_km = round1(Math.min(baseKm * ramp, baseKm * 1.1 + 5));
+    const expected_trimp = round1(baseTrimp);
+    const conservative_trimp = round1(baseTrimp * 0.9);
+    const aggressive_trimp = round1(baseTrimp * ramp);
     forecast.push({
       week_start,
       kind: "forecast",
@@ -351,6 +379,67 @@ export function buildForecastSeries(
   }
 
   return [...history, ...forecast];
+}
+
+export type HealthStatusDay = {
+  calendarDate?: string;
+  metrics?: Array<{
+    type?: string;
+    value?: number | null;
+    status?: string | null;
+  }>;
+};
+
+/** Weekly HRV from Garmin health_status enrichment (type === "HRV"). */
+export function buildWeeklyHrv(
+  days: HealthStatusDay[],
+  weeks: number,
+  asOf: Date,
+): HrvWeek[] {
+  const thisMonday = mondayOf(asOf);
+  const oldestMonday = addDays(thisMonday, -(weeks - 1) * 7);
+  const map = new Map<
+    string,
+    { values: number[]; inRange: number; measured: number }
+  >();
+
+  for (let i = 0; i < weeks; i++) {
+    const key = isoDate(addDays(oldestMonday, i * 7));
+    map.set(key, { values: [], inRange: 0, measured: 0 });
+  }
+
+  for (const d of days) {
+    if (!d.calendarDate) continue;
+    const t = Date.parse(`${d.calendarDate}T12:00:00Z`);
+    if (Number.isNaN(t)) continue;
+    const weekKey = isoDate(mondayOf(new Date(t)));
+    const bucket = map.get(weekKey);
+    if (!bucket) continue;
+    const hrv = (d.metrics ?? []).find((m) => m.type === "HRV");
+    if (!hrv || typeof hrv.value !== "number" || !Number.isFinite(hrv.value)) {
+      continue;
+    }
+    bucket.values.push(hrv.value);
+    bucket.measured += 1;
+    if (hrv.status === "IN_RANGE") bucket.inRange += 1;
+  }
+
+  return [...map.entries()].map(([week_start, b]) => {
+    const avg =
+      b.values.length > 0
+        ? round1(b.values.reduce((s, v) => s + v, 0) / b.values.length)
+        : null;
+    return {
+      week_start,
+      avg_hrv: avg,
+      min_hrv: b.values.length ? round1(Math.min(...b.values)) : null,
+      max_hrv: b.values.length ? round1(Math.max(...b.values)) : null,
+      days_measured: b.measured,
+      days_in_range: b.inRange,
+      pct_in_range:
+        b.measured > 0 ? round1((b.inRange / b.measured) * 100) : null,
+    };
+  });
 }
 
 /**
