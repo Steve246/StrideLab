@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { liveGarminEnabled, loadLabEnv } from "./env";
 import { AGENT_DATA_ROOT, ACTIVITIES_FILE } from "./paths";
+import { resolveManualSource } from "./garminSourceConfig";
 import { fileURLToPath } from "node:url";
 import readline from "node:readline";
 
@@ -21,7 +22,13 @@ export type GarminSourceStatus = {
   manual: {
     configured: boolean;
     path: string | null;
+    /** Raw value before normalization (the UI override or env value). */
+    rawPath: string | null;
+    /** Where the active path came from: UI override, `.env`, or none. */
+    origin: "explicit" | "ui" | "env" | "none";
     valid: boolean;
+    /** True when a UI override is stored and can be reset to `.env`. */
+    hasOverride: boolean;
     latestImportAt: string | null;
   };
   connect: {
@@ -66,28 +73,9 @@ async function writeState(next: PersistedState) {
 
 async function manualStatus() {
   loadLabEnv();
-  const configured = Boolean(process.env.GARMIN_EXPORT_DIR?.trim());
-  let valid = false;
-  let resolvedPath: string | null = process.env.GARMIN_EXPORT_DIR?.trim() || null;
-  if (configured) {
-    try {
-      const candidates = [resolvedPath!, path.join(resolvedPath!, "DI_CONNECT")];
-      for (const candidate of candidates) {
-        const fitness = path.join(candidate, "DI-Connect-Fitness");
-        const uploaded = path.join(candidate, "DI-Connect-Uploaded-Files");
-        try {
-          await fs.access(candidate);
-          resolvedPath = candidate;
-          valid = true;
-          if (await fs.access(fitness).then(() => true).catch(() => false) || await fs.access(uploaded).then(() => true).catch(() => false)) break;
-        } catch {
-          // Try the next supported export layout.
-        }
-      }
-    } catch {
-      valid = false;
-    }
-  }
+  const resolved = await resolveManualSource();
+  const configured = resolved.origin !== "none";
+  const hasOverride = resolved.origin === "ui";
   let latestImportAt: string | null = null;
   try {
     const meta = JSON.parse(
@@ -97,7 +85,15 @@ async function manualStatus() {
   } catch {
     // Manual data may exist without enrichment metadata.
   }
-  return { configured, path: resolvedPath, valid, latestImportAt };
+  return {
+    configured,
+    path: resolved.path,
+    rawPath: resolved.rawPath,
+    origin: resolved.origin,
+    valid: resolved.valid,
+    hasOverride,
+    latestImportAt,
+  };
 }
 
 async function connectorRequest(payload: Record<string, unknown>): Promise<ConnectorResponse> {

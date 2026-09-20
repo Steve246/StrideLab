@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runGarminResync } from "@/lib/resync";
 import { loadLabEnv } from "@/lib/env";
+import { resolveManualSource } from "@/lib/garminSourceConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,11 +9,20 @@ export const maxDuration = 300;
 
 export async function POST() {
   loadLabEnv();
-  if (!process.env.GARMIN_EXPORT_DIR?.trim()) {
+  const source = await resolveManualSource();
+  if (source.origin === "none") {
     return NextResponse.json(
       {
         error:
-          "GARMIN_EXPORT_DIR is not set in root .env. Point it at your DI_CONNECT folder.",
+          "No manual import source. Set a folder in the Manual import panel, or set GARMIN_EXPORT_DIR in root .env.",
+      },
+      { status: 400 },
+    );
+  }
+  if (!source.valid) {
+    return NextResponse.json(
+      {
+        error: `Garmin export not found or incomplete at "${source.rawPath}". Expected a DI_CONNECT folder.`,
       },
       { status: 400 },
     );

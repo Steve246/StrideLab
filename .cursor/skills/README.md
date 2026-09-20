@@ -1,6 +1,6 @@
 # Project UI skills
 
-Installed from [awesome-ai-tools-for-ui](https://github.com/maxbogo/awesome-ai-tools-for-ui) for Steven Training Lab.
+Installed from [awesome-ai-tools-for-ui](https://github.com/maxbogo/awesome-ai-tools-for-ui) for StrideLab.
 
 | Skill | Purpose |
 |-------|---------|

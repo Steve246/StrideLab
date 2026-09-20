@@ -651,7 +651,7 @@ export const vizTools = createTool({
 
     await fs.mkdir(VIZ_DIR, { recursive: true });
     const stamp = isoDate(new Date());
-    const subtitle = `Steven Personal Running Lab · as of ${isoDate(asOf)} · generated ${new Date().toISOString()}`;
+    const subtitle = `StrideLab · as of ${isoDate(asOf)} · generated ${new Date().toISOString()}`;
 
     if (kind === "mileage_load") {
       const weekly = buildWeeklySeries(activities, weeks, asOf);

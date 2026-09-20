@@ -29,6 +29,13 @@ function statusLabel(status: ConnectStatus) {
   }[status];
 }
 
+function manualOriginLabel(status: GarminSourceStatus | null) {
+  if (!status || status.manual.origin === "none") return "Not configured";
+  if (status.manual.origin === "ui") return "Saved in Lab UI";
+  if (status.manual.origin === "env") return "Root .env fallback";
+  return "Explicit path";
+}
+
 function SourceBadge({ status }: { status: GarminSourceStatus | null }) {
   if (!status) return <span className="text-xs text-muted-foreground">Data sources</span>;
   if (status.connect.status === "connected" && status.manual.valid) {
@@ -50,16 +57,68 @@ export function GarminDataSourcesPanel({ mode }: { mode: "manual" | "live" }) {
   const [code, setCode] = useState("");
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [vendor, setVendor] = useState<"garmin_connect" | null>(null);
+  const [sourcePath, setSourcePath] = useState("");
+  const [savingSource, setSavingSource] = useState(false);
+  const [sourceMessage, setSourceMessage] = useState<string | null>(null);
 
   async function loadStatus() {
     setLoading(true);
     try {
       const response = await fetch("/api/garmin/status", { cache: "no-store" });
-      setStatus((await response.json()) as GarminSourceStatus);
+      const next = (await response.json()) as GarminSourceStatus;
+      setStatus(next);
+      setSourcePath(next.manual.rawPath ?? "");
     } catch {
       setMessage("Could not read Garmin source status.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveSource() {
+    setSavingSource(true);
+    setSourceMessage(null);
+    try {
+      const response = await fetch("/api/garmin/source", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: sourcePath }),
+      });
+      const result = (await response.json()) as {
+        error?: string;
+        valid?: boolean;
+        origin?: string;
+      };
+      if (!response.ok) throw new Error(result.error ?? "Could not save the source.");
+      await loadStatus();
+      setSourceMessage(
+        result.valid
+          ? "Source saved. You can import now."
+          : "Saved, but no DI_CONNECT folder was found yet at that path.",
+      );
+    } catch (error) {
+      setSourceMessage(
+        error instanceof Error ? error.message : "Could not save the source.",
+      );
+    } finally {
+      setSavingSource(false);
+    }
+  }
+
+  async function resetSource() {
+    setSavingSource(true);
+    setSourceMessage(null);
+    try {
+      const response = await fetch("/api/garmin/source", { method: "DELETE" });
+      if (!response.ok) throw new Error("Could not reset the source.");
+      await loadStatus();
+      setSourceMessage("Reverted to the .env default (GARMIN_EXPORT_DIR).");
+    } catch (error) {
+      setSourceMessage(
+        error instanceof Error ? error.message : "Could not reset the source.",
+      );
+    } finally {
+      setSavingSource(false);
     }
   }
 
@@ -200,12 +259,72 @@ export function GarminDataSourcesPanel({ mode }: { mode: "manual" | "live" }) {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 id="manual-source-title" className="font-medium">Manual export</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{status?.manual.valid ? "Detail and archive path · valid export folder" : "Detail path not configured or folder not found"}</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {status?.manual.valid
+                      ? "Valid DI_CONNECT export folder."
+                      : "No valid export folder at this path yet."}
+                  </p>
                 </div>
                 {status?.manual.valid ? <Check className="size-4 text-[color:var(--color-optimal)]" /> : <CircleAlert className="size-4 text-[color:var(--color-caution)]" />}
               </div>
-              <p className="mt-4 break-all font-mono text-xs text-muted-foreground">{status?.manual.path ?? "Set GARMIN_EXPORT_DIR in .env"}</p>
-              <p className="mt-2 text-xs text-muted-foreground">Last import: {formatDate(status?.manual.latestImportAt ?? null)}</p>
+
+              <form
+                className="mt-4 space-y-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveSource();
+                }}
+              >
+                <label className="block text-sm font-medium" htmlFor="manual-source-path">
+                  Source folder
+                </label>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  Point at your Garmin export folder. A `DI_CONNECT` folder, or a
+                  parent folder that contains one, both work. The `.env`
+                  `GARMIN_EXPORT_DIR` value stays as the fallback default.
+                </p>
+                <input
+                  id="manual-source-path"
+                  className="min-h-11 w-full border border-input bg-background px-3 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={sourcePath}
+                  onChange={(event) => setSourcePath(event.target.value)}
+                  placeholder="/path/to/Garmin Data"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button className="min-h-11 rounded-none" type="submit" disabled={savingSource || sourcePath.trim() === (status?.manual.rawPath ?? "")}>
+                    {savingSource ? <Loader2 className="size-4 animate-spin" /> : <FolderSync className="size-4" />} Save source
+                  </Button>
+                  <Button
+                    className="min-h-11 rounded-none"
+                    type="button"
+                    variant="outline"
+                    disabled={savingSource || !status?.manual.hasOverride}
+                    onClick={() => void resetSource()}
+                  >
+                    <ArrowLeft className="size-4" /> Reset to .env
+                  </Button>
+                </div>
+              </form>
+
+              <dl className="mt-4 space-y-1 text-sm leading-6">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">Active source</dt>
+                  <dd className="font-medium">{manualOriginLabel(status)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-muted-foreground">Last import</dt>
+                  <dd className="tabular-nums">{formatDate(status?.manual.latestImportAt ?? null)}</dd>
+                </div>
+              </dl>
+
+              {sourceMessage ? (
+                <p className="mt-3 border border-border bg-muted p-3 text-sm leading-6" role="status">
+                  {sourceMessage}
+                </p>
+              ) : null}
+
               <Button className="mt-4 min-h-11 rounded-none" variant="outline" disabled={busy !== null || !status?.manual.valid} onClick={() => void sync("manual_export")}>
                 {busy === "manual_export" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Import detail archive
               </Button>

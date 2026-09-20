@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { type CoachToolEvent } from "@/lib/openaiCoach";
+import { type CoachToolEvent } from "@/lib/coachContract";
 import { streamAnviaCoach } from "@/lib/anviaCoach";
 import { llmConfigured, llmModel, llmProvider } from "@/lib/env";
 

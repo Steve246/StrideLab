@@ -10,6 +10,7 @@ import {
 } from "@/lib/data";
 import { readDashboardLayout } from "@/lib/dashboardLayout";
 import {
+  coachShowTools,
   loadLabEnv,
   llmConfigured,
   llmModel,
@@ -53,6 +54,7 @@ export default async function HomePage() {
         llm_ok,
         model: llm_ok ? `${provider}:${llmModel()}` : null,
       }}
+      showToolDetails={coachShowTools()}
     />
   );
 }

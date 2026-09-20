@@ -7,3 +7,10 @@ packages/agent/data
 .env.*
 !.env.example
 *.log
+.cursor
+.opencode
+.pnpm-store
+*.pptx
+.DS_Store
+**/__pycache__
+*.pyc

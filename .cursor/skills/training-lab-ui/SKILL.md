@@ -1,7 +1,7 @@
 ---
 name: training-lab-ui
 description: >-
-  Visual system for Steven Training Lab (apps/lab): endurance analytics dashboard
+  Visual system for StrideLab (apps/lab): endurance analytics dashboard
   + tool-calling coach chat on shadcn/ui + Tailwind. Use when redesigning Lab UI,
   styling dashboard panels, KPI cards, coach chat, layout chrome, or chart shells.
   Combines Swiss grid discipline, anti-slop frontend-design rules, and micro-polish
@@ -18,7 +18,7 @@ Companion skills in this repo: `swiss-design`, `frontend-design`, `make-interfac
 | Axis | Choice |
 |------|--------|
 | Subject | Personal endurance training lab (Garmin TRIMP / ACR / sleep / PRs) |
-| Audience | One athlete-coach (Steven) |
+| Audience | One athlete-coach |
 | Primary job | Scan load risk and recovery, then ask the coach with live tools |
 | Layout | Analytics dashboard — not a marketing landing page |
 | Kit | [shadcn/ui](https://ui.shadcn.com/) + existing Recharts / Vega panels |

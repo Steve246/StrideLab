@@ -1,21 +1,50 @@
 {
-  "name": "runningLabsDevScale",
+  "name": "stridelab",
   "version": "1.0.0",
-  "description": "",
+  "description": "Open-source personal endurance coaching lab: Garmin import, readiness, training load, calendar planning, and an MCP coach toolset.",
   "main": "index.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/stridelab.git"
+  },
+  "homepage": "https://github.com/your-org/stridelab#readme",
+  "bugs": {
+    "url": "https://github.com/your-org/stridelab/issues"
+  },
+  "keywords": [
+    "open-source",
+    "running",
+    "triathlon",
+    "ultra-marathon",
+    "garmin",
+    "training-load",
+    "trimp",
+    "coaching",
+    "mcp",
+    "ai-agent",
+    "nextjs"
+  ],
+  "author": "StrideLab Contributors",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "agent-studio": "pnpm --filter agent agent-studio",
+    "lens:smoke": "pnpm --filter agent-lens lens:smoke",
+    "mcp": "pnpm --filter lab mcp",
+    "mcp:check": "pnpm --filter agent-lens mcp:check",
+    "mcp:config": "node scripts/mcp-config.mjs",
+    "eval:coach": "pnpm --filter agent-lens eval:coach",
+    "eval:mcp": "pnpm --filter agent-lens eval:mcp",
+    "eval:all": "pnpm --filter agent-lens eval:all",
+    "telegram": "pnpm --filter agent-lens telegram",
     "lab": "pnpm --filter lab start",
+    "lab:prod": "pnpm lab:build && pnpm lab",
     "lab:dev": "pnpm --filter lab dev",
     "lab:dev:clean": "pnpm --filter lab dev:clean",
     "lab:build": "pnpm --filter lab build",
-    "garmin:setup": "python3 -m venv .venv-garmin && .venv-garmin/bin/python -m pip install -e packages/garmin-connector"
-    ,"docker:manual": "docker compose -f docker-compose.manual.yml --env-file .env.docker up --build"
+    "garmin:setup": "python3 -m venv .venv-garmin && .venv-garmin/bin/python -m pip install -e packages/garmin-connector",
+    "docker:manual": "docker compose -f docker-compose.manual.yml --env-file .env.docker up --build"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",

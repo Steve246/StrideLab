@@ -1,42 +1,48 @@
 import { AgentBuilder, createTool } from "@anvia/core";
-import { z } from "zod";
 import { loadLabEnv } from "./env";
-import { executeCoachTool, toolLabel, summarizeToolResult } from "./coachTools";
+import {
+  COACH_TOOLS,
+  coachToolZodSchema,
+  executeCoachTool,
+  toolLabel,
+  summarizeToolResult,
+} from "./coachTools";
 import { buildChatWidget } from "./chatWidgets";
-import type { CoachToolEvent } from "./openaiCoach";
+import {
+  COACH_AGENT_MAX_TURNS,
+  getCoachInstructions,
+  type CoachToolEvent,
+} from "./coachContract";
 
-const TOOL_INPUTS = {
-  get_overview: z.object({}),
-  get_weekly: z.object({ weeks: z.number().int().min(4).max(26).optional() }),
-  get_acr: z.object({ weeks: z.number().int().min(4).max(26).optional() }),
-  get_daily_analyzer: z.object({ days: z.number().int().min(1).max(28).optional() }),
-  get_your_best: z.object({}),
-  generate_weekly_brief: z.object({ week_start: z.string().optional(), format: z.string().optional(), include_web: z.boolean().optional() }),
-  web_search: z.object({ query: z.string(), max_results: z.number().int().min(1).max(8).optional() }),
-  get_dashboard_layout: z.object({}),
-  set_dashboard_layout: z.object({ widgets: z.array(z.string()) }),
-  set_dashboard_chart: z.object({ kind: z.string() }),
-};
-
-type ToolName = keyof typeof TOOL_INPUTS;
-
-function coachTool(name: ToolName) {
-  return createTool({
-    name,
-    description: toolLabel(name),
-    input: TOOL_INPUTS[name],
-    execute: async (args) => executeCoachTool(name, JSON.stringify(args)),
-  });
+/**
+ * Lab chat adapter for the canonical coach agent.
+ *
+ * Tool schemas come from `COACH_TOOLS` (the same contract the MCP server
+ * publishes), and instructions come from `coachContract`. There is no separate
+ * tool registry here, so the Lab and MCP surfaces cannot drift.
+ */
+function coachTools() {
+  return COACH_TOOLS.map((tool) =>
+    createTool({
+      name: tool.function.name,
+      description: tool.function.description ?? tool.function.name,
+      input: coachToolZodSchema(tool.function.name),
+      execute: async (args) =>
+        executeCoachTool(tool.function.name, JSON.stringify(args)),
+    }),
+  );
 }
 
 async function buildCoachAgent() {
   loadLabEnv();
-  const { getModel } = await import("../../../../packages/agent/src/providers/openai");
+  const { getModel } = await import(
+    "../../../../packages/agent/src/providers/openai"
+  );
   return new AgentBuilder("running-lab-coach", getModel())
     .name("StrideLab Coach")
-    .instructions("You are the athlete's personal running coach. Use tools for athlete data, never invent metrics, separate external research from athlete data, and explain data gaps. Keep answers concise and use Markdown.")
-    .tools((Object.keys(TOOL_INPUTS) as ToolName[]).map(coachTool))
-    .defaultMaxTurns(6)
+    .instructions(getCoachInstructions())
+    .tools(coachTools())
+    .defaultMaxTurns(COACH_AGENT_MAX_TURNS)
     .build();
 }
 
@@ -56,7 +62,12 @@ export async function streamAnviaCoach(
     if (event.type === "tool_call") {
       const name = event.toolCall.function?.name ?? "tool";
       toolsUsed.push(name);
-      onEvent({ type: "tool_start", name, label: toolLabel(name), call_id: event.toolCall.id });
+      onEvent({
+        type: "tool_start",
+        name,
+        label: toolLabel(name),
+        call_id: event.toolCall.id,
+      });
     }
     if (event.type === "tool_result") {
       const name = event.toolName;
@@ -67,12 +78,21 @@ export async function streamAnviaCoach(
         detail: summarizeToolResult(name, event.result),
         call_id: event.toolCallId,
         widget: buildChatWidget(name, event.result) ?? undefined,
-        dashboard_changed: name === "set_dashboard_layout" || name === "set_dashboard_chart" || undefined,
+        dashboard_changed:
+          name === "set_dashboard_layout" ||
+          name === "set_dashboard_chart" ||
+          undefined,
       });
     }
     if (event.type === "final") reply = event.output;
   }
   const model = coachAgent.model.defaultModel;
-  onEvent({ type: "final", reply, model, provider: "anvia", tools_used: toolsUsed });
+  onEvent({
+    type: "final",
+    reply,
+    model,
+    provider: "anvia",
+    tools_used: toolsUsed,
+  });
   return { reply, model, provider: "anvia", tools_used: toolsUsed };
 }

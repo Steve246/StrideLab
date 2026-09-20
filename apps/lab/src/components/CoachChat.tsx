@@ -78,11 +78,14 @@ export function CoachChat({
   llmOkInitial,
   onDashboardChanged,
   onClose,
+  showToolDetails = false,
 }: {
   open?: boolean;
   llmOkInitial?: boolean;
   onDashboardChanged?: () => void;
   onClose?: () => void;
+  /** When false, tool names, the catalog, and per-turn traces stay hidden. */
+  showToolDetails?: boolean;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -101,7 +104,7 @@ export function CoachChat({
   const [model, setModel] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<ToolInfo[]>(FALLBACK_TOOLS);
   const [lastTools, setLastTools] = useState<string[]>([]);
-  const [showCatalog, setShowCatalog] = useState(true);
+  const [showCatalog, setShowCatalog] = useState(showToolDetails);
   const bottomRef = useRef<HTMLDivElement>(null);
   /** Maps tool call_id (or name) → message id for in-place updates */
   const runningToolsRef = useRef<Map<string, string>>(new Map());
@@ -130,6 +133,7 @@ export function CoachChat({
   }, [refreshHealth]);
 
   useEffect(() => {
+    if (!showToolDetails) return;
     void (async () => {
       try {
         const r = await fetch("/api/chat/tools", { cache: "no-store" });
@@ -139,7 +143,7 @@ export function CoachChat({
         /* keep fallback */
       }
     })();
-  }, []);
+  }, [showToolDetails]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -228,7 +232,7 @@ export function CoachChat({
           if (ev.type === "status") {
             setStatusLine(ev.message);
           } else if (ev.type === "tool_start") {
-            setStatusLine(`Calling ${ev.name}…`);
+            setStatusLine(showToolDetails ? `Calling ${ev.name}…` : "Working…");
             const key = ev.call_id ?? ev.name;
             const id = mid(`tool-${key}`);
             runningToolsRef.current.set(key, id);
@@ -240,14 +244,16 @@ export function CoachChat({
                 role: "tool",
                 toolName: ev.name,
                 toolState: "running",
-                text: `⏳ Calling \`${ev.name}\`${hint}\n${ev.label}`,
+                text: showToolDetails
+                  ? `⏳ Calling \`${ev.name}\`${hint}\n${ev.label}`
+                  : "",
               },
             ]);
           } else if (ev.type === "tool_done") {
             const key = ev.call_id ?? ev.name;
             const id = runningToolsRef.current.get(key);
             runningToolsRef.current.delete(key);
-            setStatusLine(`Finished ${ev.name}`);
+            setStatusLine(showToolDetails ? `Finished ${ev.name}` : "Working…");
             if (ev.dashboard_changed) layoutTouched = true;
             setMessages((m) =>
               m.map((msg) =>
@@ -255,7 +261,9 @@ export function CoachChat({
                   ? {
                       ...msg,
                       toolState: "done" as const,
-                      text: `✓ \`${ev.name}\` done\n${ev.detail}`,
+                      text: showToolDetails
+                        ? `✓ \`${ev.name}\` done\n${ev.detail}`
+                        : "",
                       widget: ev.widget,
                     }
                   : msg,
@@ -278,13 +286,17 @@ export function CoachChat({
             setMessages((m) => [
               ...m,
               { id: mid("asst"), role: "assistant", text: ev.reply },
-              {
-                id: mid("meta"),
-                role: "meta",
-                text: tools.length
-                  ? `Tools this turn: ${tools.join(" → ")}`
-                  : "No tools called this turn",
-              },
+              ...(showToolDetails
+                ? [
+                    {
+                      id: mid("meta"),
+                      role: "meta" as const,
+                      text: tools.length
+                        ? `Tools this turn: ${tools.join(" → ")}`
+                        : "No tools called this turn",
+                    },
+                  ]
+                : []),
             ]);
             setLlmOk(true);
             if (layoutTouched) onDashboardChangedRef.current?.();
@@ -333,7 +345,9 @@ export function CoachChat({
     >
       <div className="border-b px-4 py-3">
         <p className="text-sm text-muted-foreground">
-          Tool-calling coach. Each tool appears as it runs.
+          {showToolDetails
+            ? "Tool-calling coach. Each tool appears as it runs."
+            : "Ask about your training, load, recovery, sleep, or request a downloadable brief."}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Badge variant={llmOk ? "secondary" : "destructive"} className="rounded-none">
@@ -344,15 +358,17 @@ export function CoachChat({
               {model}
             </Badge>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="rounded-none"
-            onClick={() => setShowCatalog((v) => !v)}
-          >
-            {showCatalog ? "Hide tools" : "Show tools"}
-          </Button>
+          {showToolDetails ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="rounded-none"
+              onClick={() => setShowCatalog((v) => !v)}
+            >
+              {showCatalog ? "Hide tools" : "Show tools"}
+            </Button>
+          ) : null}
           {onClose ? (
             <Button
               type="button"
@@ -366,7 +382,7 @@ export function CoachChat({
           ) : null}
         </div>
 
-        {showCatalog ? (
+        {showToolDetails && showCatalog ? (
           <Card size="sm" className="mt-3 rounded-none shadow-none ring-1 ring-border/80">
             <CardHeader className="pb-0">
               <CardTitle className="text-xs font-medium text-muted-foreground">
@@ -398,23 +414,29 @@ export function CoachChat({
 
       <ScrollArea className="min-h-0 flex-1 px-3 py-3">
         <div className="chat-messages flex flex-col gap-2">
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`bubble ${m.role}${m.toolState === "running" ? " tool-running" : ""}${m.toolState === "done" ? " tool-done" : ""}`}
-            >
-              {m.role === "assistant" ? (
-                <CoachMarkdown text={m.text} />
-              ) : m.role === "tool" ? (
-                <>
+          {messages.map((m) => {
+            const isTool = m.role === "tool";
+            // In production the tool text is blank; skip bubbles with nothing
+            // left to show so only real widgets (charts, downloads) render.
+            if (isTool && !m.text && !m.widget) return null;
+            return (
+              <div
+                key={m.id}
+                className={`bubble ${m.role}${m.toolState === "running" ? " tool-running" : ""}${m.toolState === "done" ? " tool-done" : ""}`}
+              >
+                {m.role === "assistant" ? (
                   <CoachMarkdown text={m.text} />
-                  {m.widget ? <ChatToolWidget widget={m.widget} /> : null}
-                </>
-              ) : (
-                m.text
-              )}
-            </div>
-          ))}
+                ) : isTool ? (
+                  <>
+                    {m.text ? <CoachMarkdown text={m.text} /> : null}
+                    {m.widget ? <ChatToolWidget widget={m.widget} /> : null}
+                  </>
+                ) : (
+                  m.text
+                )}
+              </div>
+            );
+          })}
           {busy && statusLine ? (
             <div className="bubble meta">{statusLine}</div>
           ) : null}

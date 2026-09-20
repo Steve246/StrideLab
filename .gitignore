@@ -27,6 +27,28 @@ Thumbs.db
 # Local training data (personal Garmin exports, generated JSON, reports)
 packages/agent/data/
 
+# pnpm content-addressable store (local cache, never commit)
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv*/
+.venv-garmin/
+
+# Next.js build output
+apps/lab/.next/
+apps/lab/server.js
+apps/lab/out/
+
+# Generated / reference slide decks (rebuild with `pnpm slides`)
+*.pptx
+
+# Local tooling caches
+.opencode/node_modules/
+.kilo/
+.tsbuildinfo
+
 # TypeScript cache
 .cache/
 

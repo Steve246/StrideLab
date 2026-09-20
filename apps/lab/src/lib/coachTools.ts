@@ -20,6 +20,7 @@ import {
 import { loadLabEnv } from "./env";
 import { buildVegaSpecForKind } from "./vegaSpecs";
 import { generateWeeklyBrief } from "./weeklyBrief";
+import { z } from "zod";
 
 export const COACH_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -189,6 +190,27 @@ export const COACH_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     },
   },
 ];
+
+/**
+ * Derive an Anvia/Zod input schema from the canonical `COACH_TOOLS` wire
+ * contract. This keeps one source of truth: MCP, the Lab agent, and any future
+ * consumer all describe the same tool arguments.
+ */
+export function coachToolZodSchema(name: string): z.ZodType {
+  const parameters =
+    (COACH_TOOLS.find((tool) => tool.function.name === name)?.function
+      .parameters as Parameters<typeof z.fromJSONSchema>[0] | undefined) ?? {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    };
+  return z.fromJSONSchema(parameters);
+}
+
+/** Canonical list of coach tool names (excludes MCP source-only tools). */
+export const COACH_TOOL_NAMES: readonly string[] = COACH_TOOLS.map(
+  (tool) => tool.function.name,
+);
 
 /** Human-readable catalog for UI / demos */
 export const COACH_TOOL_CATALOG: Array<{ name: string; summary: string }> = [

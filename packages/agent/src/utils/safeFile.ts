@@ -3,8 +3,8 @@ import path from "node:path";
 /**
  * Turn a model-supplied id into a safe JSON filename (no directories, one .json).
  * Examples:
- *   "plans/steven_ultra_2026-08-23.json" → "steven_ultra_2026-08-23.json"
- *   "steven_running_2026-08-31" → "steven_running_2026-08-31.json"
+ *   "plans/athlete_ultra_2026-08-23.json" → "athlete_ultra_2026-08-23.json"
+ *   "athlete_running_2026-08-31" → "athlete_running_2026-08-31.json"
  */
 export function safeJsonBasename(id: string, fallback = "file"): string {
   const raw = id.trim();

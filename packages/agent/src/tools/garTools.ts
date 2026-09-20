@@ -12,6 +12,7 @@ import {
 } from "../schemas/activity.js";
 import {
   loadSummarizedActivities,
+  readManualSourceOverride,
   resolveDiConnectRoot,
 } from "../garmin/diConnect.js";
 import { syncDiConnect } from "../garmin/syncDiConnect.js";
@@ -100,7 +101,11 @@ export const garTools = createTool({
       ),
   }),
   execute: async ({ diConnectPath, filePath }) => {
-    if (diConnectPath?.trim() || resolveDiConnectRoot()) {
+    const configured =
+      diConnectPath?.trim() ||
+      (await readManualSourceOverride()) ||
+      resolveDiConnectRoot();
+    if (configured) {
       return syncDiConnect(diConnectPath);
     }
 

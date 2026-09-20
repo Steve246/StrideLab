@@ -1,1 +1,1 @@
-"""Local Garmin Connect adapter for Steven Training Lab."""
+"""Local Garmin Connect adapter for StrideLab."""

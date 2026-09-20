@@ -11,7 +11,7 @@ const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../../..",
 );
-loadDotenv({ path: path.join(repoRoot, ".env"), override: false });
+loadDotenv({ path: path.join(repoRoot, ".env"), override: false, quiet: true });
 
 function resolveProvider(): "devscale" | "openai" {
   const raw = process.env.LLM_PROVIDER?.trim().toLowerCase();

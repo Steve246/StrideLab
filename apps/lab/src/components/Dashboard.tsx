@@ -42,6 +42,7 @@ type Props = {
   yourBest: YourBestPayload;
   layout: DashboardLayout;
   health: { llm_ok: boolean; model: string | null };
+  showToolDetails?: boolean;
 };
 
 export function Dashboard({
@@ -58,6 +59,7 @@ export function Dashboard({
   yourBest,
   layout: _layout,
   health,
+  showToolDetails = false,
 }: Props) {
   void _layout;
   const router = useRouter();
@@ -249,6 +251,7 @@ export function Dashboard({
               llmOkInitial={health.llm_ok}
               onDashboardChanged={() => void refreshAfterLayoutChange()}
               onClose={() => setChatOpen(false)}
+              showToolDetails={showToolDetails}
             />
           </div>
         </>

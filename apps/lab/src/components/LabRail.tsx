@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ExternalMenu } from "./ExternalMenu";
 import {
   Tooltip,
   TooltipContent,
@@ -94,6 +95,10 @@ export function LabRail({
           );
         })}
       </nav>
+
+      <div className="lab-rail-external">
+        <ExternalMenu />
+      </div>
 
       <div className="lab-rail-footer">
         <Tooltip>

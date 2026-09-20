@@ -14,7 +14,8 @@ export function loadLabEnv(): void {
   if (loaded) return;
   // dotenv does not override explicitly supplied deployment variables. This
   // keeps Docker/hosting secrets authoritative while supporting local .env.
-  loadDotenv({ path: path.join(repoRoot, ".env"), override: false });
+  // `quiet` keeps stdout clean: the stdio MCP server must emit JSON-RPC only.
+  loadDotenv({ path: path.join(repoRoot, ".env"), override: false, quiet: true });
   loaded = true;
 }
 
@@ -22,6 +23,19 @@ export function loadLabEnv(): void {
 export function liveGarminEnabled(): boolean {
   loadLabEnv();
   return process.env.GARMIN_LIVE_ENABLED?.trim().toLowerCase() === "true";
+}
+
+/**
+ * Whether the coach chat exposes tool names, the tool catalog, and per-turn
+ * tool traces. Hidden in production by default; set `COACH_SHOW_TOOLS=true` to
+ * force-enable for debugging a production build, or `false` to hide in dev.
+ */
+export function coachShowTools(): boolean {
+  loadLabEnv();
+  const raw = process.env.COACH_SHOW_TOOLS?.trim().toLowerCase();
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return process.env.NODE_ENV !== "production";
 }
 
 /**

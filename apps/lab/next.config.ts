@@ -12,6 +12,15 @@ const nextConfig: NextConfig = {
       ...config.resolve.alias,
       canvas: false,
     };
+    // The Lab imports agent package source directly. Those files use ESM
+    // `.js` specifiers that map to `.ts` sources, so teach webpack to resolve
+    // the TypeScript file before falling back to JavaScript.
+    config.resolve.extensionAlias = {
+      ...config.resolve.extensionAlias,
+      ".js": [".ts", ".tsx", ".js"],
+      ".mjs": [".mts", ".mjs"],
+      ".cjs": [".cts", ".cjs"],
+    };
     return config;
   },
 };

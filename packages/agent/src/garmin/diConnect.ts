@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Activity } from "../schemas/activity.js";
-import { ENRICHMENT_DIR } from "../providers/dataDirectory.js";
+import { DATA_ROOT, ENRICHMENT_DIR } from "../providers/dataDirectory.js";
 import {
   computeBanisterTrimp,
   loadDailyRhrValues,
@@ -18,6 +18,21 @@ type Sport = Activity["sport"];
 export function resolveDiConnectRoot(explicit?: string): string | null {
   const candidate = explicit?.trim() || process.env.GARMIN_EXPORT_DIR?.trim();
   return candidate ? path.resolve(candidate) : null;
+}
+
+/**
+ * Read the UI override saved by the Lab (`garmin-source-config.json`). The
+ * `.env` value remains the fallback default when no override is stored.
+ */
+export async function readManualSourceOverride(): Promise<string | null> {
+  try {
+    const raw = JSON.parse(
+      await fs.readFile(path.join(DATA_ROOT, "garmin-source-config.json"), "utf8"),
+    ) as { manualExportDir?: string };
+    return raw.manualExportDir?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 async function pathExists(p: string): Promise<boolean> {
@@ -37,10 +52,12 @@ async function pathExists(p: string): Promise<boolean> {
 export async function normalizeDiConnectRoot(
   explicit?: string,
 ): Promise<string> {
-  const raw = resolveDiConnectRoot(explicit);
+  const requested =
+    explicit?.trim() || (await readManualSourceOverride()) || undefined;
+  const raw = resolveDiConnectRoot(requested);
   if (!raw) {
     throw new Error(
-      "No Garmin export path. Set GARMIN_EXPORT_DIR in .env or pass diConnectPath.",
+      "No Garmin export path. Set one in the Lab Manual import panel, or set GARMIN_EXPORT_DIR in .env.",
     );
   }
 
