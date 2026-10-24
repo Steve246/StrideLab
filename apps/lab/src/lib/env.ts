@@ -25,6 +25,14 @@ export function liveGarminEnabled(): boolean {
   return process.env.GARMIN_LIVE_ENABLED?.trim().toLowerCase() === "true";
 }
 
+/** Personal API sync window in days (1–365). Default 7. */
+export function personalSyncDays(override?: number): number {
+  loadLabEnv();
+  const raw = override ?? Number(process.env.GARMIN_PERSONAL_SYNC_DAYS?.trim());
+  const days = Number.isFinite(raw) ? Math.trunc(raw) : 7;
+  return Math.min(365, Math.max(1, days));
+}
+
 /**
  * Whether the coach chat exposes tool names, the tool catalog, and per-turn
  * tool traces. Hidden in production by default; set `COACH_SHOW_TOOLS=true` to

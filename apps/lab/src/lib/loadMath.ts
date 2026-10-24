@@ -41,7 +41,11 @@ export type RecoverySnapshot = {
   avg_stress: number | null;
   sleep_hours: number | null;
   sleep_score: number | null;
+  /** Garmin overnight recovery score when present; Personal API often omits it. */
   recovery_score: number | null;
+  /** Latest overnight HRV (ms) from health_status enrichment. */
+  hrv: number | null;
+  hrv_status: string | null;
 };
 
 export type ForecastWeek = {

@@ -184,14 +184,35 @@ export function Dashboard({
         <div className="lab-main-meta">
           <div>
             <h1 className="lab-main-title">{LAB_TAB_TITLES[activeTab]}</h1>
-            <p className="lab-main-sub">
-              {overview.as_of}
-              {overview.last_sync
-                ? ` · synced ${new Date(overview.last_sync).toLocaleString()}`
-                : ""}
-              {" · "}
-              <span className="tabular-nums">{overview.activity_count}</span>{" "}
-              activities
+            <p className="lab-main-meta-row" aria-label="Dashboard data status">
+              <span className="lab-main-meta-item">
+                <span className="lab-main-meta-label">As of</span>
+                <span className="lab-main-meta-value tabular-nums">
+                  {overview.as_of}
+                </span>
+              </span>
+              <span className="lab-main-meta-sep" aria-hidden>
+                ·
+              </span>
+              <span className="lab-main-meta-item">
+                <span className="lab-main-meta-label">Activities</span>
+                <span className="lab-main-meta-value tabular-nums">
+                  {overview.activity_count}
+                </span>
+              </span>
+              {overview.last_sync ? (
+                <>
+                  <span className="lab-main-meta-sep" aria-hidden>
+                    ·
+                  </span>
+                  <span className="lab-main-meta-item">
+                    <span className="lab-main-meta-label">Last sync</span>
+                    <span className="lab-main-meta-value">
+                      {new Date(overview.last_sync).toLocaleString()}
+                    </span>
+                  </span>
+                </>
+              ) : null}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

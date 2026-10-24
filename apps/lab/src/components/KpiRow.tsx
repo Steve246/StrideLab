@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { OverviewPayload } from "@/lib/loadMath";
 import { formatPace, zoneColor, zoneLabel } from "@/lib/loadMath";
 import { Badge } from "@/components/ui/badge";
-import { LabPanel } from "./LabPanel";
+import { RecoverySnapshotPanel } from "./RecoverySnapshotPanel";
 
 function deltaLabel(pct: number | null): string | null {
   if (pct == null) return null;
@@ -40,7 +40,6 @@ function Stat({
 export function KpiRow({ overview }: { overview: OverviewPayload }) {
   const wow = overview.wow_distance_pct;
   const wowText = deltaLabel(wow);
-  const r = overview.recovery;
 
   return (
     <div className="mb-4 space-y-4">
@@ -117,62 +116,7 @@ export function KpiRow({ overview }: { overview: OverviewPayload }) {
         </div>
       </section>
 
-      <LabPanel
-        title="Recovery snapshot"
-        description={
-          r.date
-            ? `Garmin daily / sleep enrichment for ${r.date}`
-            : "Garmin daily / sleep enrichment (latest available day)"
-        }
-        contentClassName="!px-4 pt-3"
-      >
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
-          <Stat label="Resting HR" value={r.resting_hr ?? "—"} sub="bpm" />
-          <Stat
-            label="Body Battery"
-            value={
-              r.body_battery_high != null
-                ? `${r.body_battery_low ?? "?"}–${r.body_battery_high}`
-                : "—"
-            }
-            sub="low–high range"
-          />
-          <Stat
-            label="Sleep duration"
-            value={r.sleep_hours != null ? `${r.sleep_hours} h` : "—"}
-            sub={`score ${r.sleep_score ?? "—"}`}
-          />
-          <Stat
-            label="Recovery score"
-            value={r.recovery_score ?? "—"}
-            sub={`stress avg ${r.avg_stress ?? "—"}`}
-          />
-          <Stat
-            label="Sleep score"
-            value={r.sleep_score ?? "—"}
-            sub="Garmin overnight"
-          />
-          <Stat
-            label="Avg stress"
-            value={r.avg_stress ?? "—"}
-            sub="daily average"
-          />
-          <Stat
-            label="Body battery high"
-            value={r.body_battery_high ?? "—"}
-            sub="peak charge"
-          />
-          <Stat
-            label="Body battery low"
-            value={r.body_battery_low ?? "—"}
-            sub="trough"
-          />
-        </div>
-        <p className="mt-4 max-w-[60ch] text-xs text-muted-foreground">
-          Pair recovery with ACR on the ACR tab: high acute load plus poor sleep
-          / high stress is a stronger caution signal than either alone.
-        </p>
-      </LabPanel>
+      <RecoverySnapshotPanel recovery={overview.recovery} />
     </div>
   );
 }

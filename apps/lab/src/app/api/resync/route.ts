@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { runGarminResync } from "@/lib/resync";
-import { loadLabEnv } from "@/lib/env";
-import { resolveManualSource } from "@/lib/garminSourceConfig";
+import { loadLabEnv, liveGarminEnabled } from "@/lib/env";
+import { getGarminSourceStatus, syncGarminConnect } from "@/lib/garminSource";
+import { GarminPersonalError } from "@/lib/garminPersonal";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,38 +10,50 @@ export const maxDuration = 300;
 
 export async function POST() {
   loadLabEnv();
-  const source = await resolveManualSource();
-  if (source.origin === "none") {
+  const status = await getGarminSourceStatus();
+  const liveReady =
+    liveGarminEnabled() &&
+    status.connect.status === "connected" &&
+    Boolean(status.connect.keyOrigin);
+
+  try {
+    if (liveReady) {
+      const result = await syncGarminConnect(status.syncDays);
+      return NextResponse.json({
+        ok: true,
+        source: "garmin_connect",
+        message: `Resynced ${result.importedActivities ?? 0} activities (${result.totalActivities ?? 0} total) via Personal API.`,
+        warnings: result.warnings,
+        debugRequests: result.debugRequests,
+        ...result,
+      });
+    }
+
+    if (status.manual.valid) {
+      const result = await runGarminResync();
+      return NextResponse.json({
+        ok: true,
+        source: "manual_export",
+        message: `Resynced ${result.imported} activities (${result.total} total) from manual import. No LLM used.`,
+        ...result,
+      });
+    }
+
     return NextResponse.json(
       {
         error:
-          "No manual import source. Set a folder in the Manual import panel, or set GARMIN_EXPORT_DIR in root .env.",
+          "Nothing to resync. Connect a watch in Live sync (Personal API key), or set a DI_CONNECT folder in Manual import.",
       },
       { status: 400 },
     );
-  }
-  if (!source.valid) {
-    return NextResponse.json(
-      {
-        error: `Garmin export not found or incomplete at "${source.rawPath}". Expected a DI_CONNECT folder.`,
-      },
-      { status: 400 },
-    );
-  }
-
-  try {
-    const result = await runGarminResync();
-    return NextResponse.json({
-      ok: true,
-      message: `Resynced ${result.imported} activities (${result.total} total). No LLM used.`,
-      ...result,
-    });
   } catch (err) {
+    const statusCode = err instanceof GarminPersonalError ? err.status : 500;
     return NextResponse.json(
       {
         error: err instanceof Error ? err.message : "Resync failed",
+        code: err instanceof GarminPersonalError ? err.code : "resync_failed",
       },
-      { status: 500 },
+      { status: statusCode },
     );
   }
 }

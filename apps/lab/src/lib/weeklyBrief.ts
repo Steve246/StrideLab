@@ -206,7 +206,7 @@ export async function generateWeeklyBrief(opts?: {
     `## Recovery`,
     ``,
     `- **Sleep consistency:** ${insights.sleep_consistency.label}${sleepLine ? ` (${sleepLine})` : ""}`,
-    `- **Recovery snapshot:** RHR ${recovery.resting_hr ?? "—"} · sleep score ${recovery.sleep_score ?? "—"} · recovery score ${recovery.recovery_score ?? "—"} · stress ${recovery.avg_stress ?? "—"}`,
+    `- **Recovery snapshot:** RHR ${recovery.resting_hr ?? "—"} · sleep score ${recovery.sleep_score ?? "—"} · HRV ${recovery.hrv ?? "—"} · stress ${recovery.avg_stress ?? "—"}`,
     `- **Daily analyzer nights:** ${daily.days.filter((d) => d.sleep.total_hours).length} with sleep in lookback`,
     ``,
     `## Highlights`,
@@ -404,7 +404,7 @@ function renderBriefHtml(opts: {
   <h2>Recovery</h2>
   <ul>
     <li>Sleep consistency: ${escHtml(insights.sleep_consistency.label)}${sleepLine ? ` (${escHtml(sleepLine)})` : ""}</li>
-    <li>RHR ${recovery.resting_hr ?? "—"} · sleep score ${recovery.sleep_score ?? "—"} · recovery ${recovery.recovery_score ?? "—"} · stress ${recovery.avg_stress ?? "—"}</li>
+    <li>RHR ${recovery.resting_hr ?? "—"} · sleep score ${recovery.sleep_score ?? "—"} · HRV ${recovery.hrv ?? "—"} · stress ${recovery.avg_stress ?? "—"}</li>
   </ul>
 
   <h2>Highlights</h2>

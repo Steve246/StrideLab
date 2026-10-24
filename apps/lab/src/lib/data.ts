@@ -64,16 +64,38 @@ async function readJsonFile<T>(file: string): Promise<T | null> {
   }
 }
 
+type DailyWellnessDay = {
+  calendarDate?: string;
+  restingHeartRate?: number | null;
+  bodyBatteryHigh?: number | null;
+  bodyBatteryLow?: number | null;
+  avgStress?: number | null;
+};
+
+function hasWellness(day: DailyWellnessDay): boolean {
+  return (
+    typeof day.restingHeartRate === "number" ||
+    typeof day.bodyBatteryHigh === "number" ||
+    typeof day.bodyBatteryLow === "number" ||
+    typeof day.avgStress === "number"
+  );
+}
+
+/** Prefer the newest day that actually has RHR / Body Battery / stress (skip empty “today” shells). */
+function pickLatestWellnessDay(
+  days: DailyWellnessDay[] | undefined,
+): DailyWellnessDay | undefined {
+  if (!days?.length) return undefined;
+  for (const day of days) {
+    if (hasWellness(day)) return day;
+  }
+  return days[0];
+}
+
 export async function buildRecoverySnapshot(): Promise<RecoverySnapshot> {
-  const daily = await readJsonFile<{
-    days?: Array<{
-      calendarDate?: string;
-      restingHeartRate?: number;
-      bodyBatteryHigh?: number;
-      bodyBatteryLow?: number;
-      avgStress?: number;
-    }>;
-  }>(path.join(ENRICHMENT_DIR, "daily.json"));
+  const daily = await readJsonFile<{ days?: DailyWellnessDay[] }>(
+    path.join(ENRICHMENT_DIR, "daily.json"),
+  );
 
   const sleep = await readJsonFile<{
     days?: Array<{
@@ -84,13 +106,31 @@ export async function buildRecoverySnapshot(): Promise<RecoverySnapshot> {
     }>;
   }>(path.join(ENRICHMENT_DIR, "sleep.json"));
 
-  const d = daily?.days?.[0];
+  const health = await readJsonFile<{
+    days?: Array<{
+      calendarDate?: string;
+      metrics?: Array<{
+        type?: string;
+        value?: number | null;
+        status?: string | null;
+      }>;
+    }>;
+  }>(path.join(ENRICHMENT_DIR, "health_status.json"));
+
+  const d = pickLatestWellnessDay(daily?.days);
+  const date = d?.calendarDate ?? null;
   const s =
-    sleep?.days?.find((x) => x.calendarDate === d?.calendarDate) ??
-    sleep?.days?.[0];
+    (date
+      ? sleep?.days?.find((x) => x.calendarDate === date)
+      : undefined) ?? sleep?.days?.[0];
+  const healthDay =
+    (date
+      ? health?.days?.find((x) => x.calendarDate === date)
+      : undefined) ?? health?.days?.[0];
+  const hrvMetric = (healthDay?.metrics ?? []).find((m) => m.type === "HRV");
 
   return {
-    date: d?.calendarDate ?? s?.calendarDate ?? null,
+    date: date ?? s?.calendarDate ?? healthDay?.calendarDate ?? null,
     resting_hr:
       typeof d?.restingHeartRate === "number" ? d.restingHeartRate : null,
     body_battery_high:
@@ -106,6 +146,11 @@ export async function buildRecoverySnapshot(): Promise<RecoverySnapshot> {
       typeof s?.overallSleepScore === "number" ? s.overallSleepScore : null,
     recovery_score:
       typeof s?.recoveryScore === "number" ? s.recoveryScore : null,
+    hrv: typeof hrvMetric?.value === "number" ? hrvMetric.value : null,
+    hrv_status:
+      typeof hrvMetric?.status === "string" && hrvMetric.status.trim()
+        ? hrvMetric.status.trim()
+        : null,
   };
 }
 
@@ -371,6 +416,8 @@ export async function buildOverviewDecision(
       avg_stress: null,
       body_battery_high: null,
       body_battery_low: null,
+      hrv: null,
+      hrv_status: null,
     },
   };
 

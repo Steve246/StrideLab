@@ -46,9 +46,8 @@ Claude, VS Code, Windsurf, …) reuse the same coach tools.
 
 - Node.js 20+ (22 recommended)
 - [pnpm](https://pnpm.io/) 11+
-- Python 3.10+ (only for the optional live Garmin connector)
-- A Garmin Connect export (`DI_CONNECT`) for manual import, and/or a Garmin
-  Connect account for live sync
+- A Garmin Connect export (`DI_CONNECT`) for manual import, and/or a Personal
+  API key for live sync
 
 ## Setup
 
@@ -76,6 +75,8 @@ OPENAI_MODEL=gpt-4.1
 TAVILY_API_KEY=your_tavily_api_key
 GARMIN_EXPORT_DIR=/path/to/DI_CONNECT
 GARMIN_LIVE_ENABLED=false
+# GARMIN_PERSONAL_API_KEY=your_personal_api_key
+GARMIN_PERSONAL_SYNC_DAYS=7
 ```
 
 Set `LLM_PROVIDER=devscale` (default) or `openai`. Keep both key sets in `.env` and switch with that one variable.
@@ -120,7 +121,7 @@ checks for the build and prints these options instead of a cryptic error.
 > prints a standalone warning, which is harmless for local use.
 
 - **Resync Garmin:** click **Resync Garmin** in the header (uses `GARMIN_EXPORT_DIR`, no LLM). Or CLI: `pnpm --filter agent resync`.
-- **Data adapters:** use the separate **Live sync** and **Manual import** controls in the dashboard header. Live sync uses Garmin Connect first for fast recent refreshes; manual `DI_CONNECT` import provides richer detail and historical backfill. Neither path deletes the other adapter's data.
+- **Data adapters:** use **Live sync** and **Manual import** in the dashboard header. Live sync uses the Garmin Connect Personal API when `GARMIN_LIVE_ENABLED=true` and an API key is saved or set as `GARMIN_PERSONAL_API_KEY`. Manual `DI_CONNECT` import remains the history archive.
 - **Manual-first Docker:** see `docs/PRD-stridelab.md` for VM/Docker deployment, persistent data volumes, private live-login gating, Anvia Lens, and evaluation setup.
 - **Coach chat:** `LLM_PROVIDER` + Devscale or OpenAI keys in root `.env` (Studio not required).
 - **Studio** (`pnpm agent-studio` on :4021) is only for agent debugging / tool playground — not required for the Lab UI.
@@ -181,78 +182,42 @@ FIT files inside `UploadedFiles_*.zip` are not required for this summary import.
 
 **Training load:** session `trimp` / `load_score` is Banister TRIMP (HR × duration). Garmin Training Effect is stored separately as `aerobic_te` / `anaerobic_te` (0–5).
 
-## Garmin Connect login flow
+## Garmin Connect Personal API
 
-Live sync is optional and uses Garmin Connect as its first vendor through a separate local connector process. The dashboard never sends Garmin credentials to the coach or to the LLM provider.
-
-Install the first live vendor adapter into a repository-local Python environment:
-
-```bash
-pnpm garmin:setup
-```
-
-Then add this to the root `.env`:
+Live sync is optional and uses the official [Personal API](https://developer.garmin.com/gc-developer-program/personal/personal-faq/). The dashboard never sends the API key to the coach or the LLM provider.
 
 ```env
-GARMIN_CONNECTOR_COMMAND=garmin-connector
+GARMIN_LIVE_ENABLED=true
+GARMIN_PERSONAL_API_KEY=your_personal_api_key
 ```
 
-Start the dashboard from a new shell so it sees the updated environment:
+### Where the Personal API key is stored
 
-```bash
-pnpm lab:dev
-```
+| Source | Location | Precedence |
+| --- | --- | --- |
+| **Live sync** paste | `packages/agent/data/garmin-personal-key.json` (mode `0600`, gitignored) | Wins if present |
+| **Env** | `GARMIN_PERSONAL_API_KEY` in root `.env` (gitignored) | Used only when no UI file |
 
-The dashboard has two separate header controls:
+Disconnect in the Live sync panel deletes the data-file key only; it does **not**
+clear `.env`. The Lab does **not** auto-write `.env` from the UI (fragile with
+Next env loading / Docker). Use one store on purpose — see
+[BUG-GARMIN-PERSONAL-002](docs/BUGS.md). Never commit real keys or the data file.
+
+With the flag on and a key present, sync pulls `GARMIN_PERSONAL_SYNC_DAYS` of
+history (default 7, max 365): activities, sleep, HRV, and daily wellness from the
+[Swagger reference](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/).
+Use ~84–90 days for 12-week graphs. See
+[docs/PRD-garmin-personal-sync.md](docs/PRD-garmin-personal-sync.md).
 
 ```text
-Manual import
-  -> Import detail archive
-
-Live sync
-  -> choose a live vendor
-  -> Garmin Connect
-  -> enter email and password
-  -> connector authenticates with Garmin
-  -> if required, enter MFA code
-  -> session/token state is retained by the connector
-  -> choose Sync live data
-```
-
-The browser calls these server-side routes:
-
-```text
-POST /api/garmin/login/start
-POST /api/garmin/login/resume
 GET  /api/garmin/status
+POST /api/garmin/key
 POST /api/garmin/sync
 POST /api/garmin/disconnect
 ```
 
-The repository now includes the first local Garmin Connect adapter under `packages/garmin-connector`. `pnpm garmin:setup` creates `.venv-garmin`; without `GARMIN_CONNECTOR_COMMAND`, the backend uses that repository-local environment automatically. Manual import continues to work independently. The intended operating model is: manual import establishes the detailed archive, then live sync keeps recent data fresh between exports.
-
-The connector stores its serialized Garmin session state at:
-
-```text
-~/.running-lab/garmin.json
-```
-
-The file is created with owner-only permissions. It contains session state, not a password. Remove it by using **Disconnect** in the Live sync panel or deleting it manually after stopping the dashboard.
-
-Connector smoke test without logging in:
-
-```bash
-printf '%s\n' '{"action":"health"}' '{"action":"status"}' | garmin-connector
-```
-
-Expected initial status:
-
-```json
-{"ok":true,"status":"ready"}
-{"ok":true,"status":"disconnected","accountLabel":null,"message":null}
-```
-
-The connector is intentionally a narrow local adapter. It does not expose a public HTTP port, does not send credentials to an LLM, and writes protocol responses only to stdout.
+An invalid, revoked, or expired key is reported in the Live sync panel when
+Garmin rejects it.
 
 ## StrideLab MCP server (complete coach toolset)
 
@@ -304,9 +269,8 @@ sync_garmin             sync the active source (manual DI_CONNECT by default)
 get_training_context    compact derived context + recent sync ledger
 ```
 
-`garmin_login(email, password)` and MFA are intentionally **not** tools. Login
-stays in the dashboard so credentials never enter chat history, prompts, or MCP
-arguments.
+Personal API keys are intentionally **not** tools. Save the key in Live sync
+so it never enters chat history, prompts, or MCP arguments.
 
 ### Connect from a local MCP client
 
@@ -360,7 +324,7 @@ launcher automatically.
 | Client | Config location | Top-level key |
 |--------|-----------------|---------------|
 | Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) | `mcpServers` |
-| Cursor | `.cursor/mcp.json` (this repo) or `~/.cursor/mcp.json` | `mcpServers` |
+| Cursor | `~/.cursor/mcp.json` (user) or local `.cursor/mcp.json` (gitignored) | `mcpServers` |
 | VS Code / GitHub Copilot | `.vscode/mcp.json` | `servers` (add `"type": "stdio"`) |
 | Windsurf / Cline | their MCP settings file | `mcpServers` |
 | Zed | `settings.json` | `context_servers` |
@@ -589,7 +553,7 @@ Analyze my readiness for the last 14 days.
 - `packages/agent-lens` — Evals (coach over HTTP, MCP agent), MCP handshake checks, Telegram adapter
 - `packages/garmin-connector` — Local Garmin Connect adapter (Python, stdio)
 - `scripts/` — MCP client config generator
-- `docs/` — PRD, eval notes
+- `docs/` — PRD, bugs, [going public](docs/GOING-PUBLIC.md)
 - `deploy/` — Caddy reverse-proxy config for Docker deployments
 
 ## Privacy & security
@@ -598,29 +562,111 @@ Analyze my readiness for the last 14 days.
   is gitignored, and `.env` / `.env.docker` (API keys, tokens, export paths)
   are never committed. Only `.env.example` / `.env.docker.example` with
   placeholder values are tracked.
-- **Garmin credentials never touch the LLM.** Login and MFA happen in the
-  dashboard against server-side routes; the coach prompt, chat history, and MCP
-  arguments never carry email/password. The connector keeps session state in
-  `~/.running-lab/garmin.json` with owner-only permissions.
+- **Local AI tooling is gitignored.** `.cursor/` and `.opencode/` (skills, MCP
+  configs, caches) stay on your machine — they are not part of the public tree.
+- **Garmin credentials never touch the LLM.** Personal API keys and session
+  state stay on server-side routes / local files; the coach prompt, chat
+  history, and MCP arguments never carry API keys or passwords.
 - **Remote MCP is opt-in and token-gated.** The HTTP transport is disabled
   unless `MCP_HTTP_ENABLED=true` with a bearer token, and remote callers are
   read + sync only.
 - Before pushing a fork or PR, run a quick self-check:
-  `git status` (no `.env`, `data/`, or `*.pptx`) and
+  `git status` (no `.env`, `packages/agent/data/`, `.cursor/`, `.opencode/`, or
+  `*.pptx`) and
   `git grep -n -E "sk-|API_KEY=.+[^=]$|/Users/" -- ':!pnpm-lock.yaml'`
   (no live keys or machine paths).
 
+### Preparing a public GitHub repo
+
+Full checklist: **[docs/GOING-PUBLIC.md](docs/GOING-PUBLIC.md)**.
+
+Highlights:
+
+1. Confirm secrets and `packages/agent/data/` are untracked and ignored.
+2. Protect `main` (PR + your review required; no force-push). Optional `dev`
+   branch for WIP — public readers can still *see* every branch; protection
+   controls who can *merge*.
+3. Accept outside work only via fork → PR (do not grant write collaborator
+   access casually).
+
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome. Outside contributors **fork → open a pull request**;
+maintainers review and merge. Do not expect direct push access to this repo.
 
-1. Fork the repo and create a feature branch.
-2. Run `pnpm install` and the relevant checks (`pnpm mcp:check`, evals).
-3. Keep Garmin credentials, API keys, and personal `data/` out of commits.
-4. Open a pull request describing the change and how you tested it.
+### Branches
 
-Good first areas: new chart panels, additional live-vendor adapters, eval
-scenarios, and docs.
+| Branch | Purpose |
+| --- | --- |
+| `main` | Stable default. Prefer changes only via PR. |
+| `dev` | Integration / WIP. Day-to-day work and feature PRs target `dev` when that branch exists. |
+
+Typical flow: **feature branch → `dev` → `main`**. If `dev` is not published yet,
+open PRs against `main`.
+
+```bash
+# Fork on GitHub, then:
+git clone https://github.com/<you>/StrideLab.git
+cd StrideLab
+git remote add upstream https://github.com/Steve246/StrideLab.git
+
+git fetch upstream
+git checkout -b feature/short-description upstream/dev   # or upstream/main
+
+pnpm install
+cp .env.example .env   # add your own keys locally — never commit .env
+```
+
+### Before you commit
+
+1. Confirm the branch: `git branch` (not committing throwaway work straight to
+   `main` unless you are a maintainer releasing).
+2. Keep secrets and personal data out of the tree:
+   - `.env` / real API keys
+   - `packages/agent/data/` (activities, enrichment, Personal API key file)
+   - `DI_CONNECT/` exports
+   - `.cursor/` and `.opencode/` (local AI tooling — gitignored)
+3. Self-check:
+
+```bash
+git status
+git check-ignore -v .env packages/agent/data .cursor .opencode
+git grep -n -E 'sk-|API_KEY=.+[^=]$|/Users/|/home/[^/]+/' -- \
+  ':!pnpm-lock.yaml' ':!*.svg' ':!docs/images/*' || true
+```
+
+4. Run what you changed (examples):
+
+```bash
+pnpm install
+pnpm --filter lab lint    # if available
+pnpm mcp:check            # MCP wiring
+pnpm --filter lab dev     # smoke the dashboard
+```
+
+### Pull request
+
+1. Push your fork branch and open a PR into **`dev`** (or **`main`** if `dev`
+   does not exist yet).
+2. Describe **what** changed, **why**, and **how you tested** it.
+3. Keep PRs focused (one feature or fix per PR when practical).
+4. Wait for maintainer review. Protected branches require approval before merge.
+
+Maintainers: protect `main` and `dev` on GitHub (require PR + review, restrict
+pushes, block force-push). Details: [docs/GOING-PUBLIC.md](docs/GOING-PUBLIC.md).
+
+### Good first areas
+
+- Chart / Overview panels and copy clarity
+- Docs and `.env.example` improvements
+- Eval scenarios (`packages/agent-lens`)
+- Additional live-vendor adapters (beyond Garmin)
+- Bug fixes listed in [docs/BUGS.md](docs/BUGS.md)
+
+### License of contributions
+
+By opening a PR you agree your contribution is licensed under the same MIT
+license as this project ([LICENSE](LICENSE)).
 
 ## License
 

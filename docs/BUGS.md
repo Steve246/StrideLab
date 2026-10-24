@@ -1,5 +1,250 @@
 # Bugs
 
+## BUG-LAB-005: Recovery snapshot dashed on incomplete “today”; missing from Overview
+
+**Status:** Fixed  
+**Affected surface:** Overview / Load recovery KPIs · `buildRecoverySnapshot`  
+**Symptom:** Recovery snapshot showed dashes for Resting HR, Body Battery, and
+stress while sleep duration/score filled. Overview had no recovery panel (only
+Load did). “Recovery score” stayed empty.
+
+### Cause
+
+1. `daily.json` `days[0]` is often an in-progress calendar day with null wellness
+   fields; complete RHR/BB/stress live on the prior day. Snapshot always used
+   `days[0]` for daily metrics but sleep fell back to the latest sleep night.
+2. Panel lived only in `KpiRow` (Load tab).
+3. Personal API sleep payloads lack `sleepScores.recovery`; HRV in
+   `health_status.json` was unused in the snapshot.
+
+### Fix
+
+- Pick the latest daily row with any wellness field; align sleep + HRV to that date.
+- Add `hrv` / `hrv_status` to `RecoverySnapshot`; UI shows HRV instead of empty Recovery score.
+- Shared `RecoverySnapshotPanel` on Overview and Load.
+- Clearer dashboard meta: labeled **As of** / **Activities** (/ **Last sync**).
+
+### Verification
+
+```bash
+# With enrichment present: Overview shows Recovery snapshot with RHR/BB/stress/HRV
+# for the latest complete day (not empty today). Header reads “As of … · Activities …”
+```
+
+## BUG-GARMIN-PERSONAL-002: Personal API key lives in two places (UI file overrides `.env`)
+
+**Status:** Accepted (by design) — do not auto-write `.env` from the UI  
+**Affected surface:** Live sync key paste → `resolvePersonalApiKey`  
+**Symptom:** A key set as `GARMIN_PERSONAL_API_KEY` in root `.env` is ignored after
+the athlete pastes a key in **Live sync**. Disconnecting in the UI removes only
+the data-file key, not the env value. Operators looking for “one secrets file”
+find two stores.
+
+### Cause
+
+Resolution order in `apps/lab/src/lib/garminPersonal.ts`:
+
+1. UI-saved file: `packages/agent/data/garmin-personal-key.json` (mode `0600`, gitignored under `packages/agent/data/`)
+2. Else env: `GARMIN_PERSONAL_API_KEY`
+
+The UI intentionally persists to the data file so sync works without editing env
+or restarting Next.js.
+
+### Decision (do not “fix” by writing `.env`)
+
+| Approach | Pros | Cons |
+| --- | --- | --- |
+| Keep data file (current) | Local, gitignored, no process restart, `0600` | Second place to look for secrets |
+| Put key only in `.env` (manual) | One familiar place for all secrets | Athlete edits env themselves; UI disconnect does not clear env |
+| UI writes `.env` / `.env.local` | Feels unified | Fragile: Next loads env at start; races with editors; Docker mounts; ignore mistakes; multi-instance |
+
+**Recommendation for a public single-athlete Lab:** keep the data-file store (or
+treat `.env` as the only source and drop UI persistence). Do **not** auto-mutate
+`.env` from the app unless accepting restart + strict ignore discipline.
+
+Never commit real keys. Document paste-into-`.env` *or* Live sync file — not
+both as equal defaults without stating precedence.
+
+### Verification
+
+```bash
+# No credentials in this doc. Locally:
+# 1) Set GARMIN_PERSONAL_API_KEY in .env only → Live sync status origin "env"
+# 2) Paste a key in Live sync UI → origin "ui"; file exists under packages/agent/data/
+# 3) Disconnect in UI → file removed; env key still used if still set
+# 4) git check-ignore -v packages/agent/data/garmin-personal-key.json
+```
+
+## BUG-LAB-003: Rail Resync only ran manual DI_CONNECT import
+
+**Status:** Fixed  
+**Affected surface:** Left rail **Resync** → `POST /api/resync`  
+**Symptom:** Athletes using Live sync (Personal API) clicked rail Resync and got a
+failure about a missing export folder, even though Live sync worked. The control
+was still labeled “Resync Garmin”.
+
+### Cause
+
+`/api/resync` always called `runGarminResync()` (manual DI_CONNECT path) and
+never checked Personal API connection status. Header **Live sync** used a
+separate `/api/garmin/sync` route.
+
+### Fix
+
+`POST /api/resync` now picks the active source:
+
+1. Live enabled + Connect status `connected` with a key → `syncGarminConnect()`
+2. Else valid manual export folder → `runGarminResync()`
+3. Else `400` with a clear message pointing at Live sync or Manual import
+
+Rail label/tooltip is generic **Resync** (header setup names unchanged).
+
+### Verification
+
+```bash
+# With Personal API connected: rail Resync → activities refresh, no DI_CONNECT error
+# With only manual folder: rail Resync → manual import path
+# With neither: 400 message mentions Live sync / Manual import
+```
+
+## BUG-LAB-004: Coach-closed layout left a large empty right gutter; dark mode unwired
+
+**Status:** Fixed  
+**Affected surface:** Lab shell layout + theme  
+**Symptom:** With coach closed, wide screens showed a large unused right column
+(`.lab-main` max-width 72rem, left-aligned). Dark shadcn tokens existed but
+`html` never got `class="dark"` and Lab custom CSS vars stayed light-only.
+
+### Fix
+
+- Coach closed: `.lab-main` widens to `min(96rem, 100%)` and centers
+  (`margin-inline: auto`). Coach open: left-biased `max-width: 72rem`.
+- `ThemeToggle` in rail footer (`light` / `dark` / `system`, `localStorage`),
+  FOUC-prevention script in `layout.tsx`, and `.dark` remaps Lab tokens
+  (`--color-bg`, `--color-surface`, `--color-text`, etc.).
+
+## BUG-GARMIN-PERSONAL-001: `weight-service/weight/all` returns HTTP 400 during live sync
+
+**Status:** Fixed (endpoint removed from sync)  
+**Affected surface:** Live sync → Garmin Personal API  
+**Symptom:** After a successful Personal API sync, the Lab showed:
+
+```text
+Synced 4 activities and 6 sleep nights.
+weight-entries: Garmin returned 400 for /weight-service/weight/all/2026-10-18/2026-10-24.
+```
+
+### Cause
+
+Garmin’s Personal API documents
+`GET /weight-service/weight/all/{startDate}/{endDate}`, but returned **HTTP 400**
+for a normal recent window. Weight was never consumed by the Lab dashboard
+(`apps/lab/src/lib/data.ts` only reads `activities.json`, `sleep.json`,
+`daily.json`, `health_status.json`).
+
+### Fix
+
+Personal API sync was trimmed to **dashboard data pointers only**:
+
+| Endpoint | Writes |
+| --- | --- |
+| `/activitylist-service/activities/search/activities` | `activities/activities.json` |
+| `/sleep-service/sleep/dailySleepSummariesByDate` | `enrichment/sleep.json` |
+| `/usersummary-service/v2/dailysummaries` | `enrichment/daily.json` (RHR, body battery, stress) |
+| `/hrv-service/hrv/daily/{from}/{to}` | `enrichment/health_status.json` (HRV) |
+
+Dropped (not used by Overview / Load / Weekly / ACR / Daily Analyzer): profile,
+HR zones, standalone stress/steps/hydration/body-battery, weight (+ `/weight/all`),
+weight goals, wellness activities, per-day SpO2/food/cycle/HR series, and
+per-activity detail/workouts.
+
+Soft-fail + **Dev debug curls** remain for any remaining 4xx on the kept set.
+
+### Verification
+
+```bash
+# Sync via Live sync UI, then:
+# - No weight-entries warning
+# - Overview recovery / weekly HRV / activity KPIs still update
+```
+
+## BUG-LAB-002: Tailwind Oxide native binding missing (`Cannot find native binding`)
+
+**Status:** Fixed  
+**Affected surface:** `apps/lab` CSS compile (`globals.css` via `@tailwindcss/postcss`)  
+**Symptom:** `pnpm lab:dev` / `pnpm lab:dev:clean` starts, then compiling `/` fails with:
+
+```text
+Error: Cannot find native binding. npm has a bug related to optional dependencies
+...
+./src/app/globals.css
+GET / 500
+```
+
+Secondary warning on Node 18:
+
+```text
+React encountered an empty buffer ... ArrayBuffer.prototype.detached
+```
+
+### Cause
+
+Tailwind CSS v4’s PostCSS plugin loads `@tailwindcss/oxide`, which needs a
+platform optional dependency. On this Linux x64 / glibc host that package is
+`@tailwindcss/oxide-linux-x64-gnu@4.3.3`.
+
+Runtime probe (debug session `6cff3c`):
+
+- `gnuExists: false`, `muslExists: false`
+- Direct `require("@tailwindcss/oxide")` failed with the same “Cannot find
+  native binding” message as Next.js
+- `pnpm install` alone did **not** restore the optional package (“Already up to
+  date”)
+- Active shell was Node **v18.20.8**; the repo requires Node **20+** (22
+  recommended), which also explains the `ArrayBuffer.prototype.detached`
+  warning
+
+### Fix
+
+1. Pin the Linux x64 GNU Oxide binary on the Lab package so pnpm always
+   installs it:
+
+```json
+// apps/lab/package.json → devDependencies
+"@tailwindcss/oxide-linux-x64-gnu": "4.3.3"
+```
+
+2. Install (already applied in this fix):
+
+```bash
+pnpm add -D @tailwindcss/oxide-linux-x64-gnu@4.3.3 --filter lab
+```
+
+3. Use Node 22 (`.nvmrc` added at repo root):
+
+```bash
+nvm use    # or: nvm use 22
+pnpm lab:dev:clean
+```
+
+### Verification
+
+```bash
+node -e 'require("/home/steven/StrideLab/node_modules/.pnpm/@tailwindcss+oxide@4.3.3/node_modules/@tailwindcss/oxide"); console.log("oxide OK")'
+# PostCSS of globals.css succeeds (~97KB output)
+curl -fsS -o /dev/null -w "%{http_code}\n" http://localhost:4030/
+```
+
+Expected: oxide loads; `/` returns `200`; no “Cannot find native binding”.
+
+### Prevention
+
+- Prefer `nvm use` / Node 22 before Lab commands (see `.nvmrc`).
+- Do not set pnpm `optional=false` / ignore-optional for this repo.
+- If Oxide fails again after a clean install on another OS/arch, add the
+  matching `@tailwindcss/oxide-<platform>` package the same way (or reinstall
+  with optional deps enabled).
+
 ## BUG-LAB-001: Next.js development server references missing chunk
 
 **Status:** Fixed with recovery workflow  

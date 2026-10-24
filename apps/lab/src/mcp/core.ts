@@ -5,7 +5,7 @@ import { readContextSnapshot } from "../../../../packages/agent/src/garmin/conte
 import {
   getGarminSourceStatus,
   syncGarminConnect,
-} from "../../../../packages/agent/src/garmin/sourceService.js";
+} from "../lib/garminSource";
 import { getLatestSyncRuns } from "../../../../packages/agent/src/garmin/syncLedger.js";
 
 /**
@@ -111,15 +111,15 @@ const sourceToolDefs: McpToolDef[] = [
   {
     name: "sync_garmin",
     description:
-      "Sync the active Garmin source (manual DI_CONNECT import by default). Login and MFA are completed in the Lab UI, never as tool arguments.",
+      "Sync Garmin. Uses the Personal API when live sync is enabled and an API key is configured. Otherwise imports the manual DI_CONNECT archive. Never pass an API key.",
     inputSchema: {
       type: "object",
       properties: {
         days: {
           type: "integer",
           minimum: 1,
-          maximum: 31,
-          description: "Recent window in days. Default 7.",
+          maximum: 365,
+          description: "Recent window in days. Defaults to GARMIN_PERSONAL_SYNC_DAYS (usually 7).",
         },
       },
       additionalProperties: false,

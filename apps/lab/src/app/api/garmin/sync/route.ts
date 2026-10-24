@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getGarminSourceStatus, syncGarminConnect } from "@/lib/garminSource";
+import { GarminPersonalError } from "@/lib/garminPersonal";
 import { runGarminResync } from "@/lib/resync";
-import { liveGarminEnabled } from "@/lib/env";
+import { liveGarminEnabled, personalSyncDays } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -26,9 +27,15 @@ export async function POST(request: Request) {
     if (body.adapter === "live" && body.vendor && body.vendor !== "garmin_connect") {
       return NextResponse.json({ error: `Live vendor "${body.vendor}" is not configured.` }, { status: 400 });
     }
-    if (source === "garmin_connect") return NextResponse.json(await syncGarminConnect(body.days ?? 7));
+    if (source === "garmin_connect") {
+      return NextResponse.json(await syncGarminConnect(personalSyncDays(body.days)));
+    }
     return NextResponse.json(await runGarminResync());
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Garmin sync failed." }, { status: 500 });
+    const status = error instanceof GarminPersonalError ? error.status : 500;
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "Garmin sync failed.",
+      code: error instanceof GarminPersonalError ? error.code : "sync_failed",
+    }, { status });
   }
 }

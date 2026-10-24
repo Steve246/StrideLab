@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ExternalMenu } from "./ExternalMenu";
+import { ThemeToggle } from "./ThemeToggle";
 import {
   Tooltip,
   TooltipContent,
@@ -101,6 +102,7 @@ export function LabRail({
       </div>
 
       <div className="lab-rail-footer">
+        <ThemeToggle />
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -110,7 +112,7 @@ export function LabRail({
               className="lab-rail-icon-btn"
               onClick={onResync}
               disabled={resyncing}
-              aria-label="Resync Garmin"
+              aria-label="Resync"
             >
               <RefreshCw
                 className={cn("size-4", resyncing && "animate-spin")}
@@ -119,7 +121,7 @@ export function LabRail({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="right">
-            {resyncing ? "Resyncing…" : "Resync Garmin"}
+            {resyncing ? "Resyncing…" : "Resync"}
           </TooltipContent>
         </Tooltip>
 

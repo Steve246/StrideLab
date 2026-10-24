@@ -1,71 +1,64 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
-import { liveGarminEnabled, loadLabEnv } from "./env";
-import { AGENT_DATA_ROOT, ACTIVITIES_FILE } from "./paths";
+import { liveGarminEnabled, loadLabEnv, personalSyncDays } from "./env";
+import { AGENT_DATA_ROOT } from "./paths";
 import { resolveManualSource } from "./garminSourceConfig";
-import { fileURLToPath } from "node:url";
-import readline from "node:readline";
+import {
+  forgetPersonalApiKey,
+  type GarminDebugRequest,
+  GarminPersonalError,
+  keyHint,
+  resolvePersonalApiKey,
+  savePersonalApiKey,
+  syncPersonalApi,
+  verifyPersonalApiKey,
+} from "./garminPersonal";
 
 export type GarminSource = "manual_export" | "garmin_connect";
-export type ConnectStatus =
-  | "disconnected"
-  | "connecting"
-  | "mfa_required"
-  | "connected"
-  | "expired"
-  | "error";
+export type ConnectStatus = "disconnected" | "connected" | "expired" | "error";
 
 export type GarminSourceStatus = {
   liveEnabled: boolean;
+  /** Configured Personal API window (`GARMIN_PERSONAL_SYNC_DAYS`). */
+  syncDays: number;
   activeSource: GarminSource;
   manual: {
     configured: boolean;
     path: string | null;
-    /** Raw value before normalization (the UI override or env value). */
     rawPath: string | null;
-    /** Where the active path came from: UI override, `.env`, or none. */
     origin: "explicit" | "ui" | "env" | "none";
     valid: boolean;
-    /** True when a UI override is stored and can be reset to `.env`. */
     hasOverride: boolean;
     latestImportAt: string | null;
   };
   connect: {
     status: ConnectStatus;
     accountLabel: string | null;
+    keyOrigin: "ui" | "env" | null;
     lastSyncAt: string | null;
     latestActivityDate: string | null;
     message: string | null;
+    /** Soft-fail debug curls from the last sync (no secrets). */
+    debugRequests: GarminDebugRequest[];
   };
 };
 
-type PersistedState = Pick<GarminSourceStatus, "activeSource" | "connect">;
-type ConnectorResponse = {
-  ok: boolean;
-  status?: ConnectStatus | "success" | "mfa_required";
-  accountLabel?: string;
-  challengeId?: string;
-  activities?: Array<Record<string, unknown>>;
-  error?: string;
-  message?: string;
+type PersistedState = {
+  activeSource?: GarminSource;
+  connect?: Partial<GarminSourceStatus["connect"]>;
 };
-
-let connectorProcess: ReturnType<typeof spawn> | null = null;
-let connectorReader: readline.Interface | null = null;
-let connectorQueue: Array<{ resolve: (value: ConnectorResponse) => void; reject: (reason?: unknown) => void }> = [];
 
 const STATE_FILE = path.join(AGENT_DATA_ROOT, "garmin-source.json");
 
-async function readState(): Promise<Partial<PersistedState>> {
+async function readState(): Promise<PersistedState> {
   try {
-    return JSON.parse(await fs.readFile(STATE_FILE, "utf8")) as Partial<PersistedState>;
+    return JSON.parse(await fs.readFile(STATE_FILE, "utf8")) as PersistedState;
   } catch {
     return {};
   }
 }
 
-async function writeState(next: PersistedState) {
+async function writeState(next: { activeSource: GarminSource; connect: GarminSourceStatus["connect"] }) {
   await fs.mkdir(AGENT_DATA_ROOT, { recursive: true });
   await fs.writeFile(STATE_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
   await fs.chmod(STATE_FILE, 0o600);
@@ -74,116 +67,69 @@ async function writeState(next: PersistedState) {
 async function manualStatus() {
   loadLabEnv();
   const resolved = await resolveManualSource();
-  const configured = resolved.origin !== "none";
-  const hasOverride = resolved.origin === "ui";
   let latestImportAt: string | null = null;
   try {
-    const meta = JSON.parse(
-      await fs.readFile(path.join(AGENT_DATA_ROOT, "enrichment", "meta.json"), "utf8"),
-    ) as { updated_at?: string };
+    const meta = JSON.parse(await fs.readFile(path.join(AGENT_DATA_ROOT, "enrichment", "meta.json"), "utf8")) as { updated_at?: string };
     latestImportAt = meta.updated_at ?? null;
   } catch {
     // Manual data may exist without enrichment metadata.
   }
   return {
-    configured,
+    configured: resolved.origin !== "none",
     path: resolved.path,
     rawPath: resolved.rawPath,
     origin: resolved.origin,
     valid: resolved.valid,
-    hasOverride,
+    hasOverride: resolved.origin === "ui",
     latestImportAt,
   };
 }
 
-async function connectorRequest(payload: Record<string, unknown>): Promise<ConnectorResponse> {
-  loadLabEnv();
-  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-  const connectorSrc = path.join(repoRoot, "packages/garmin-connector/src");
-  const command = process.env.GARMIN_CONNECTOR_COMMAND?.trim() || "./.venv-garmin/bin/python -m garmin_connector";
-  const [executable, ...args] = command.split(/\s+/);
-  if (!connectorProcess || connectorProcess.exitCode !== null) {
-    connectorProcess = spawn(executable, args, {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        PYTHONPATH: [connectorSrc, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const stdout = connectorProcess.stdout;
-    if (!stdout) {
-      connectorProcess.kill();
-      connectorProcess = null;
-      throw new Error("Garmin connector did not expose stdout.");
-    }
-    connectorReader = readline.createInterface({ input: stdout });
-    connectorReader.on("line", (line) => {
-      const pending = connectorQueue.shift();
-      if (!pending) return;
-      try {
-        pending.resolve(JSON.parse(line) as ConnectorResponse);
-      } catch {
-        pending.reject(new Error("Garmin connector returned invalid JSON."));
-      }
-    });
-    connectorProcess.on("error", (error) => {
-      const queue = connectorQueue.splice(0);
-      for (const pending of queue) pending.reject(error);
-    });
-    connectorProcess.on("close", (code) => {
-      connectorProcess = null;
-      connectorReader?.close();
-      connectorReader = null;
-      const queue = connectorQueue.splice(0);
-      for (const pending of queue) pending.reject(new Error(
-        `Garmin connector exited ${code ?? "unknown"}. Install it with: pnpm garmin:setup`,
-      ));
-    });
-  }
-  return new Promise((resolve, reject) => {
-    connectorQueue.push({ resolve, reject });
-    const stdin = connectorProcess?.stdin;
-    if (!stdin) {
-      connectorQueue.pop();
-      reject(new Error("Garmin connector did not expose stdin."));
-      return;
-    }
-    stdin.write(`${JSON.stringify(payload)}\n`);
-  });
-}
-
-function maskEmail(email?: string | null) {
-  if (!email || !email.includes("@")) return null;
-  const [local, domain] = email.split("@", 2);
-  return `${local.slice(0, 1)}${"•".repeat(Math.min(4, Math.max(2, local.length - 1)))}@${domain}`;
+function blankConnect(): GarminSourceStatus["connect"] {
+  return {
+    status: "disconnected",
+    accountLabel: null,
+    keyOrigin: null,
+    lastSyncAt: null,
+    latestActivityDate: null,
+    message: null,
+    debugRequests: [],
+  };
 }
 
 export async function getGarminSourceStatus(): Promise<GarminSourceStatus> {
   const state = await readState();
   const manual = await manualStatus();
-  let connect = state.connect ?? {
-    status: "disconnected" as const,
-    accountLabel: null,
-    lastSyncAt: null,
-    latestActivityDate: null,
-    message: null,
+  const saved = {
+    ...blankConnect(),
+    ...state.connect,
+    keyOrigin: null as GarminSourceStatus["connect"]["keyOrigin"],
+    debugRequests: Array.isArray(state.connect?.debugRequests) ? state.connect!.debugRequests! : [],
   };
-  if (liveGarminEnabled() && process.env.GARMIN_CONNECTOR_COMMAND) {
-    try {
-      const response = await connectorRequest({ action: "status" });
-      connect = {
-        ...connect,
-        status: response.status === "success" ? "connected" : (response.status ?? connect.status) as ConnectStatus,
-        accountLabel: response.accountLabel ? maskEmail(response.accountLabel) : connect.accountLabel,
-        message: response.message ?? connect.message,
-      };
-    } catch {
-      // Keep the last known state when the optional connector is offline.
+  let connect = saved;
+  if (liveGarminEnabled()) {
+    const key = await resolvePersonalApiKey();
+    if (!key) {
+      connect = { ...blankConnect(), lastSyncAt: saved.lastSyncAt, latestActivityDate: saved.latestActivityDate };
+    } else {
+      connect = { ...saved, accountLabel: keyHint(key.apiKey), keyOrigin: key.origin };
+      try {
+        await verifyPersonalApiKey(key.apiKey);
+        connect = connect.status === "connected"
+          ? { ...connect, status: "connected" }
+          : { ...connect, status: "connected", message: null };
+      } catch (error) {
+        connect = {
+          ...connect,
+          status: error instanceof GarminPersonalError && error.code === "key_expired" ? "expired" : "error",
+          message: error instanceof Error ? error.message : "This API key is not working.",
+        };
+      }
     }
   }
   return {
     liveEnabled: liveGarminEnabled(),
+    syncDays: personalSyncDays(),
     activeSource: state.activeSource ?? (connect.status === "connected" ? "garmin_connect" : "manual_export"),
     manual,
     connect,
@@ -196,85 +142,78 @@ export async function setGarminSource(source: GarminSource) {
   return getGarminSourceStatus();
 }
 
-export async function startGarminLogin(email: string, password: string) {
-  const response = await connectorRequest({ action: "login_start", email, password });
-  if (!response.ok) throw new Error(response.error ?? "Garmin login failed.");
-  if (response.status === "mfa_required") {
-    return { status: "mfa_required" as const, challengeId: response.challengeId };
+export async function saveGarminPersonalKey(apiKey: string) {
+  if (!liveGarminEnabled()) {
+    throw new GarminPersonalError("Live Garmin is private and disabled. Use manual import.", "disabled", 404);
   }
-  const current = await getGarminSourceStatus();
-  await writeState({
-    activeSource: "garmin_connect",
-    connect: { ...current.connect, status: "connected", accountLabel: maskEmail(email), message: null },
-  });
-  return { status: "connected" as const, accountLabel: maskEmail(email) };
-}
-
-export async function resumeGarminLogin(challengeId: string, code: string) {
-  const response = await connectorRequest({ action: "login_resume", challengeId, code });
-  if (!response.ok) throw new Error(response.error ?? "Garmin verification failed.");
-  const current = await getGarminSourceStatus();
-  await writeState({
-    activeSource: "garmin_connect",
-    connect: { ...current.connect, status: "connected", accountLabel: maskEmail(response.accountLabel), message: null },
-  });
-  return { status: "connected" as const, accountLabel: maskEmail(response.accountLabel) };
-}
-
-export async function syncGarminConnect(days = 7) {
-  const response = await connectorRequest({ action: "sync", days });
-  if (!response.ok) throw new Error(response.error ?? "Garmin sync failed.");
-  const incoming = response.activities ?? [];
-  let existing: { activities?: Array<Record<string, unknown>> } = {};
-  try {
-    existing = JSON.parse(await fs.readFile(ACTIVITIES_FILE, "utf8")) as typeof existing;
-  } catch {
-    // First live sync.
-  }
-  const byId = new Map((existing.activities ?? []).map((activity) => [String(activity.activity_id), activity]));
-  for (const activity of incoming) {
-    const key = String(activity.activity_id);
-    const previous = byId.get(key);
-    // Live summaries are additive: preserve richer existing manual fields when
-    // the live response omits them, while allowing fresh live values through.
-    byId.set(key, previous ? mergeLiveActivity(previous, activity) : activity);
-  }
-  const activities = [...byId.values()].sort(
-    (a, b) => Date.parse(String(b.date ?? "")) - Date.parse(String(a.date ?? "")),
-  );
-  await fs.mkdir(path.dirname(ACTIVITIES_FILE), { recursive: true });
-  await fs.writeFile(ACTIVITIES_FILE, JSON.stringify({ updated_at: new Date().toISOString(), activities }, null, 2));
-  const current = await getGarminSourceStatus();
+  const saved = await savePersonalApiKey(apiKey);
+  const current = await readState();
   await writeState({
     activeSource: "garmin_connect",
     connect: {
+      ...blankConnect(),
       ...current.connect,
       status: "connected",
-      lastSyncAt: new Date().toISOString(),
-      latestActivityDate: String(activities[0]?.date ?? current.connect.latestActivityDate ?? "") || null,
+      accountLabel: saved.keyHint,
+      keyOrigin: "ui",
       message: null,
     },
   });
-  return { source: "garmin_connect", status: "success", importedActivities: incoming.length, totalActivities: activities.length };
+  return { status: "connected" as const, keyHint: saved.keyHint };
 }
 
-function mergeLiveActivity(
-  previous: Record<string, unknown>,
-  live: Record<string, unknown>,
-) {
-  const merged = { ...previous };
-  for (const [key, value] of Object.entries(live)) {
-    if (value !== null && value !== undefined && value !== "") merged[key] = value;
+export async function syncGarminConnect(days?: number) {
+  if (!liveGarminEnabled()) {
+    throw new GarminPersonalError("Live Garmin is private and disabled. Use manual import.", "disabled", 404);
   }
-  return merged;
+  const key = await resolvePersonalApiKey();
+  if (!key) throw new GarminPersonalError("Add a Personal API key before syncing.", "key_missing");
+  try {
+    const result = await syncPersonalApi(key.apiKey, days);
+    const current = await readState();
+    await writeState({
+      activeSource: "garmin_connect",
+      connect: {
+        ...blankConnect(),
+        ...current.connect,
+        status: "connected",
+        accountLabel: keyHint(key.apiKey),
+        keyOrigin: key.origin,
+        lastSyncAt: new Date().toISOString(),
+        latestActivityDate: result.latestActivityDate,
+        message: result.warnings.length ? result.warnings.slice(0, 3).join("\n") : null,
+        debugRequests: result.debugRequests ?? [],
+      },
+    });
+    return { source: "garmin_connect" as const, status: "success" as const, ...result };
+  } catch (error) {
+    const current = await readState();
+    await writeState({
+      activeSource: current.activeSource ?? "garmin_connect",
+      connect: {
+        ...blankConnect(),
+        ...current.connect,
+        status: error instanceof GarminPersonalError && error.code === "key_expired" ? "expired" : "error",
+        accountLabel: keyHint(key.apiKey),
+        keyOrigin: key.origin,
+        message: error instanceof Error ? error.message : "Garmin sync failed.",
+      },
+    });
+    throw error;
+  }
 }
 
 export async function disconnectGarmin() {
-  if (process.env.GARMIN_CONNECTOR_COMMAND) await connectorRequest({ action: "logout" });
-  const current = await getGarminSourceStatus();
+  await forgetPersonalApiKey();
+  const current = await readState();
   await writeState({
-    activeSource: current.manual.valid ? "manual_export" : "manual_export",
-    connect: { ...current.connect, status: "disconnected", accountLabel: null, message: null },
+    activeSource: "manual_export",
+    connect: {
+      ...blankConnect(),
+      lastSyncAt: current.connect?.lastSyncAt ?? null,
+      latestActivityDate: current.connect?.latestActivityDate ?? null,
+      message: null,
+    },
   });
   return getGarminSourceStatus();
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { disconnectGarmin } from "@/lib/garminSource";
+import { GarminPersonalError } from "@/lib/garminPersonal";
 import { liveGarminEnabled } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -11,6 +12,10 @@ export async function POST() {
   try {
     return NextResponse.json(await disconnectGarmin());
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Disconnect failed." }, { status: 502 });
+    const status = error instanceof GarminPersonalError ? error.status : 502;
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "Disconnect failed.",
+      code: error instanceof GarminPersonalError ? error.code : "disconnect_failed",
+    }, { status });
   }
 }

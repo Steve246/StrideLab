@@ -36,6 +36,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@tailwindcss/oxide-linux-x64-gnu": "4.3.3",
     "@types/node": "^22.15.21",
     "@types/react": "^19.1.5",
     "@types/react-dom": "^19.1.5",

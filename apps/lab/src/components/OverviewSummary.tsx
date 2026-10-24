@@ -4,6 +4,7 @@ import type { OverviewInsights } from "@/lib/overviewInsights";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { DailyAnalyzer } from "./DailyAnalyzer";
+import { RecoverySnapshotPanel } from "./RecoverySnapshotPanel";
 
 /** Overview tab: week KPIs + decision cards (not Load / Weekly / ACR / Best). */
 export function OverviewSummary({
@@ -101,6 +102,8 @@ export function OverviewSummary({
           </div>
         </div>
       </section>
+
+      <RecoverySnapshotPanel recovery={overview.recovery} />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <InsightCard

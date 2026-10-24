@@ -24,6 +24,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Local AI / IDE agent tooling (skills, MCP, caches — keep private)
+.cursor/
+.opencode/
+
 # Local training data (personal Garmin exports, generated JSON, reports)
 packages/agent/data/
 
@@ -45,7 +49,6 @@ apps/lab/out/
 *.pptx
 
 # Local tooling caches
-.opencode/node_modules/
 .kilo/
 .tsbuildinfo
 

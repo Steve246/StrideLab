@@ -110,7 +110,7 @@ export async function syncActiveGarmin(days = 7) {
   const run = await beginSyncRun({ source: "garmin_connect", mode: "quick", requestedWindow: { days } });
   if (run.status === "succeeded") return run;
   try {
-    throw new Error("Garmin Connect sync must be completed through the configured local connector.");
+    throw new Error("Live Garmin sync runs in the Lab with GARMIN_LIVE_ENABLED=true and a Personal API key.");
   } catch (error) {
     await updateSyncRun(run.job_id, { error_code: "connector_not_configured" });
     await finishSyncRun(run.job_id, { status: "failed", warnings: [], error_code: "connector_not_configured" });
