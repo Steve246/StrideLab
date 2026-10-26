@@ -1,5 +1,33 @@
 # Bugs
 
+## BUG-LAB-006: `next build` fails on duplicate keys in resync response
+
+**Status:** Fixed  
+**Affected surface:** `POST /api/resync` · `apps/lab` production build  
+**Symptom:** `pnpm` lab build dies during typecheck:
+
+```
+./src/app/api/resync/route.ts:24:9
+Type error: 'source' is specified more than once, so this usage will be overwritten.
+```
+
+Same error for `warnings` and `debugRequests`.
+
+### Cause
+
+The live-sync branch built the JSON body with explicit `source`, `warnings`, and `debugRequests`, then spread `...result`. `syncGarminConnect()` already returns those fields (`source: "garmin_connect"` plus the Personal API payload), so the later spread overwrote the earlier keys. TypeScript `TS2783` treats that as a compile error, which fails `next build`.
+
+### Fix
+
+Spread `result` first, then set `ok`, `source`, and `message`. Warnings and debug requests still come from the sync result. The response shape is unchanged.
+
+### Verification
+
+```bash
+cd apps/lab && npx tsc --noEmit
+# route.ts no longer reports TS2783. next build typecheck passes this file.
+```
+
 ## BUG-LAB-005: Recovery snapshot dashed on incomplete “today”; missing from Overview
 
 **Status:** Fixed  
@@ -384,8 +412,7 @@ retried through chat or MCP arguments.
 
 ### Remaining implementation
 
-Implement the long-lived worker described in
-`docs/PRD-stridelab.md` with:
+A long-lived Garmin password worker (not the Personal API path) would need:
 
 - MFA challenge persistence and `login_resume`.
 - `curl_cffi` strategy configuration.

@@ -1,4 +1,8 @@
 import type { DailyAnalyzerDay } from "./insights";
+import {
+  buildDeeperInsights,
+  type DeeperInsight,
+} from "./deeperInsights";
 import type {
   ActivityRow,
   AcrPoint,
@@ -7,6 +11,8 @@ import type {
 } from "./loadMath";
 import { isoDate, round1 } from "./loadMath";
 import { athleteTimeZone, localDayKey } from "./timezone";
+
+export type { DeeperInsight };
 
 /**
  * Overview-only decision cards — distinct from Load / Weekly / ACR / Best tabs.
@@ -37,6 +43,12 @@ export type OverviewInsights = {
     avg_score: number | null;
     hours_spread: number | null;
     label: string;
+  };
+  /** Deterministic deeper cards (Feature A). */
+  deeper: DeeperInsight[];
+  race: {
+    marathon: string;
+    ultra: string;
   };
 };
 
@@ -193,6 +205,14 @@ export function buildOverviewInsights(opts: {
       "Continue progressive training; check Daily Analyzer tomorrow for sleep after today's load.";
   }
 
+  const deeper = buildDeeperInsights({
+    overview,
+    activities,
+    dailyDays,
+    asOf,
+  });
+  const race = racePointers(activities, asOf);
+
   return {
     week_status,
     week_status_label,
@@ -217,5 +237,49 @@ export function buildOverviewInsights(opts: {
       hours_spread: hoursSpread,
       label: sleepLabel,
     },
+    deeper,
+    race,
   };
+}
+
+function racePointers(activities: ActivityRow[], asOf: Date) {
+  const asOfMs = asOf.getTime();
+  const day = 24 * 60 * 60 * 1000;
+  const runs = activities.filter((a) => {
+    const sport = (a.sport ?? "").toLowerCase();
+    return sport.includes("run") || sport === "ultra";
+  });
+  const inWindow = (a: ActivityRow, days: number) => {
+    const t = Date.parse(a.date ?? "");
+    return !Number.isNaN(t) && t <= asOfMs && t >= asOfMs - days * day;
+  };
+  const longPool = runs.filter((a) => inWindow(a, 42));
+  const longest = longPool.reduce<ActivityRow | null>((best, a) => {
+    if (!best || (a.distance_km ?? 0) > (best.distance_km ?? 0)) return a;
+    return best;
+  }, null);
+  const km = longest?.distance_km ?? null;
+  const mins = longest?.duration_min ?? null;
+  const marathon =
+    km == null
+      ? "No runs in the last 6 weeks yet."
+      : km >= 30
+        ? `Longest run ${round1(km)} km${mins != null ? ` · ${Math.round(mins)} min` : ""}. That is in marathon long-run range (about 28–32 km).`
+        : `Longest run ${round1(km)} km${mins != null ? ` · ${Math.round(mins)} min` : ""}. A marathon build usually wants one 28–32 km long run before race week.`;
+
+  const climb = runs
+    .filter((a) => inWindow(a, 28))
+    .reduce((sum, a) => sum + (a.elevation_gain_m ?? 0), 0);
+  const grade =
+    longest && longest.distance_km && longest.elevation_gain_m != null && longest.distance_km > 0.2
+      ? round1(longest.elevation_gain_m / longest.distance_km)
+      : null;
+  const ultra =
+    climb <= 0
+      ? "No climb recorded on recent runs."
+      : `28-day run climb ${Math.round(climb)} m${
+          grade != null ? ` · long run ${grade} m/km` : ""
+        }. Ultra trail fitness shows up as time-on-feet plus climb, not pace alone.`;
+
+  return { marathon, ultra };
 }

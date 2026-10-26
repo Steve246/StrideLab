@@ -55,8 +55,8 @@ type StreamEvent =
   | { type: "error"; error: string };
 
 const FALLBACK_TOOLS: ToolInfo[] = [
-  { name: "get_overview", summary: "Week KPIs, ACR, recovery, forecast" },
-  { name: "get_weekly", summary: "Weekly km / TRIMP / HRV + forecast" },
+  { name: "get_overview", summary: "Week KPIs, ACR, recovery" },
+  { name: "get_weekly", summary: "Weekly km / TRIMP / HRV" },
   { name: "get_acr", summary: "Acute:chronic load ratio" },
   { name: "get_daily_analyzer", summary: "Sleep vs workout by day" },
   { name: "get_your_best", summary: "PRs, lowlights, streaks" },

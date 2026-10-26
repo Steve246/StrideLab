@@ -28,7 +28,7 @@ export const COACH_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "get_overview",
       description:
-        "Get this week's KPIs: distance, TRIMP, pace, HR, ACR zones, alignment, recovery (sleep/RHR), and next-week forecast. Use for load/readiness questions.",
+        "Get this week's KPIs: distance, TRIMP, pace, HR, ACR zones, alignment, and recovery (sleep/RHR). Use for load/readiness questions.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
@@ -37,7 +37,7 @@ export const COACH_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "get_weekly",
       description:
-        "Get weekly distance/TRIMP/HRV series and load forecast. Use for trends and week comparisons.",
+        "Get weekly distance/TRIMP/HRV series. Use for trends and week comparisons.",
       parameters: {
         type: "object",
         properties: {
@@ -214,8 +214,8 @@ export const COACH_TOOL_NAMES: readonly string[] = COACH_TOOLS.map(
 
 /** Human-readable catalog for UI / demos */
 export const COACH_TOOL_CATALOG: Array<{ name: string; summary: string }> = [
-  { name: "get_overview", summary: "Week KPIs, ACR, recovery, forecast" },
-  { name: "get_weekly", summary: "Weekly km / TRIMP / HRV + forecast" },
+  { name: "get_overview", summary: "Week KPIs, ACR, recovery" },
+  { name: "get_weekly", summary: "Weekly km / TRIMP / HRV" },
   { name: "get_acr", summary: "Acute:chronic load ratio" },
   { name: "get_daily_analyzer", summary: "Sleep vs workout by day" },
   { name: "get_your_best", summary: "PRs, lowlights, streaks" },

@@ -106,13 +106,6 @@ export function KpiRow({ overview }: { overview: OverviewPayload }) {
               sub="TRIMP / km"
             />
           ) : null}
-          {overview.forecast_next_week_km != null ? (
-            <Stat
-              label="Next week target"
-              value={`${overview.forecast_next_week_km} km`}
-              sub={`TRIMP ${overview.forecast_next_week_trimp ?? "—"}`}
-            />
-          ) : null}
         </div>
       </section>
 

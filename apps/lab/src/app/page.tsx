@@ -1,6 +1,7 @@
 import { Dashboard } from "@/components/Dashboard";
 import {
   buildAcr,
+  buildCareer,
   buildDailyAnalyzer,
   buildOverview,
   buildOverviewDecision,
@@ -21,7 +22,7 @@ export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   loadLabEnv();
-  const [overview, insights, weekly, acr, recent, daily, best, layout] =
+  const [overview, insights, weekly, acr, recent, daily, best, career, layout] =
     await Promise.all([
       buildOverview(12),
       buildOverviewDecision(12),
@@ -30,6 +31,7 @@ export default async function HomePage() {
       listRecentActivities(40),
       buildDailyAnalyzer(7),
       buildYourBestPayload(),
+      buildCareer(),
       readDashboardLayout(),
     ]);
 
@@ -41,7 +43,6 @@ export default async function HomePage() {
       overview={overview}
       insights={insights}
       weeks={weekly.weeks}
-      forecast={weekly.forecast}
       hrv={weekly.hrv}
       acrKm={acr.km}
       acrTrimp={acr.trimp}
@@ -49,6 +50,7 @@ export default async function HomePage() {
       activities={recent.activities}
       dailyAnalyzer={daily.days}
       yourBest={best}
+      career={career}
       layout={layout}
       health={{
         llm_ok,

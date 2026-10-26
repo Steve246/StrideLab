@@ -8,7 +8,6 @@ import type { DailyAnalyzerDay, YourBestPayload } from "@/lib/insights";
 import type {
   ActivityRow,
   AcrPoint,
-  ForecastWeek,
   HrvWeek,
   OverviewPayload,
   WeekBucket,
@@ -19,6 +18,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ActivityTable } from "./ActivityTable";
+import { CareerSummary } from "./CareerSummary";
+import type { CareerSummary as CareerSummaryData } from "@/lib/careerSummary";
 import { CoachChat } from "./CoachChat";
 import { DualAcrChart } from "./DualAcrChart";
 import { KpiRow } from "./KpiRow";
@@ -32,7 +33,6 @@ type Props = {
   overview: OverviewPayload;
   insights: OverviewInsights;
   weeks: WeekBucket[];
-  forecast: ForecastWeek[];
   hrv: HrvWeek[];
   acrKm: AcrPoint[];
   acrTrimp: AcrPoint[];
@@ -40,6 +40,7 @@ type Props = {
   activities: ActivityRow[];
   dailyAnalyzer: DailyAnalyzerDay[];
   yourBest: YourBestPayload;
+  career: CareerSummaryData;
   layout: DashboardLayout;
   health: { llm_ok: boolean; model: string | null };
   showToolDetails?: boolean;
@@ -49,7 +50,6 @@ export function Dashboard({
   overview,
   insights,
   weeks,
-  forecast,
   hrv,
   acrKm,
   acrTrimp,
@@ -57,6 +57,7 @@ export function Dashboard({
   activities,
   dailyAnalyzer,
   yourBest,
+  career,
   layout: _layout,
   health,
   showToolDetails = false,
@@ -134,7 +135,7 @@ export function Dashboard({
         return <KpiRow overview={overview} />;
       case "weekly":
         return (
-          <WeeklyMileageLoad weeks={weeks} forecast={forecast} hrv={hrv} />
+          <WeeklyMileageLoad weeks={weeks} hrv={hrv} />
         );
       case "acr":
         return (
@@ -146,6 +147,8 @@ export function Dashboard({
         );
       case "best":
         return <YourBest data={yourBest} />;
+      case "summary":
+        return <CareerSummary data={career} />;
       case "log":
         return <ActivityTable activities={activities} />;
       default:

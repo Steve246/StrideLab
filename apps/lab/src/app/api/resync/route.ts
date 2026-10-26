@@ -20,12 +20,10 @@ export async function POST() {
     if (liveReady) {
       const result = await syncGarminConnect(status.syncDays);
       return NextResponse.json({
+        ...result,
         ok: true,
         source: "garmin_connect",
         message: `Resynced ${result.importedActivities ?? 0} activities (${result.totalActivities ?? 0} total) via Personal API.`,
-        warnings: result.warnings,
-        debugRequests: result.debugRequests,
-        ...result,
       });
     }
 

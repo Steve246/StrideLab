@@ -32,6 +32,9 @@ import {
   buildOverviewInsights,
   type OverviewInsights,
 } from "./overviewInsights";
+import { buildCareerSummary, type CareerSummary } from "./careerSummary";
+
+export type { CareerSummary };
 
 export type { OverviewInsights };
 
@@ -386,6 +389,11 @@ export async function buildOverviewDecision(
     );
   }
 
+  const efficiency =
+    last && last.distance_km > 0.05
+      ? round1(last.trimp / last.distance_km)
+      : null;
+
   const overviewLite: OverviewPayload = {
     as_of: isoDate(asOf),
     last_sync: null,
@@ -396,7 +404,7 @@ export async function buildOverviewDecision(
     elevation_gain_m: last?.elevation_gain_m ?? 0,
     avg_pace_min_per_km: last?.avg_pace_min_per_km ?? null,
     avg_hr: last?.avg_hr ?? null,
-    efficiency_trimp_per_km: null,
+    efficiency_trimp_per_km: efficiency,
     wow_distance_pct: wow,
     longest_run_28d_km: null,
     acr_km: curKm?.acr ?? null,
@@ -407,18 +415,7 @@ export async function buildOverviewDecision(
     activity_count: activities.length,
     forecast_next_week_km: next?.expected_km ?? null,
     forecast_next_week_trimp: next?.expected_trimp ?? null,
-    recovery: {
-      date: null,
-      resting_hr: null,
-      sleep_hours: null,
-      sleep_score: null,
-      recovery_score: null,
-      avg_stress: null,
-      body_battery_high: null,
-      body_battery_low: null,
-      hrv: null,
-      hrv_status: null,
-    },
+    recovery: await buildRecoverySnapshot(),
   };
 
   const [sleepDays, dailyDays] = await Promise.all([
@@ -439,6 +436,27 @@ export async function buildOverviewDecision(
     acrTrimp,
     dailyDays: analyzerDays,
     asOf,
+  });
+}
+
+export async function buildCareer(): Promise<CareerSummary> {
+  const activities = await readActivities();
+  const [daily, sleep, health] = await Promise.all([
+    readJsonFile<{ days?: Parameters<typeof buildCareerSummary>[0]["daily"] }>(
+      path.join(ENRICHMENT_DIR, "daily.json"),
+    ),
+    readJsonFile<{ days?: Parameters<typeof buildCareerSummary>[0]["sleep"] }>(
+      path.join(ENRICHMENT_DIR, "sleep.json"),
+    ),
+    readJsonFile<{ days?: Parameters<typeof buildCareerSummary>[0]["health"] }>(
+      path.join(ENRICHMENT_DIR, "health_status.json"),
+    ),
+  ]);
+  return buildCareerSummary({
+    activities,
+    daily: daily?.days ?? [],
+    sleep: sleep?.days ?? [],
+    health: health?.days ?? [],
   });
 }
 

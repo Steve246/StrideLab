@@ -16,8 +16,9 @@ training plans for your next goal, and chat with a coach that grounds every answ
 in your own data. A complete MCP toolset lets any MCP-capable client (Cursor,
 Claude, VS Code, Windsurf, …) reuse the same coach tools.
 
-> **New here?** Start at [Setup](#setup) — you only need `pnpm install`,
-> a `.env` file (see [`.env.example`](.env.example)), and `pnpm lab:dev`.
+> **New here?**
+> - **Athletes / non-coders:** [Setup](#setup) or Docker in this README, then use the Lab UI. What each tab does is in [docs/PRD-garmin-personal-sync.md](docs/PRD-garmin-personal-sync.md).
+> - **Developers:** [Setup](#setup) — `pnpm install`, copy [`.env.example`](.env.example), `pnpm lab:dev`.
 
 ## Features
 
@@ -122,7 +123,7 @@ checks for the build and prints these options instead of a cryptic error.
 
 - **Resync Garmin:** click **Resync Garmin** in the header (uses `GARMIN_EXPORT_DIR`, no LLM). Or CLI: `pnpm --filter agent resync`.
 - **Data adapters:** use **Live sync** and **Manual import** in the dashboard header. Live sync uses the Garmin Connect Personal API when `GARMIN_LIVE_ENABLED=true` and an API key is saved or set as `GARMIN_PERSONAL_API_KEY`. Manual `DI_CONNECT` import remains the history archive.
-- **Manual-first Docker:** see `docs/PRD-stridelab.md` for VM/Docker deployment, persistent data volumes, private live-login gating, Anvia Lens, and evaluation setup.
+- **Manual-first Docker:** `pnpm docker:manual` with a host `DI_CONNECT` folder. Live sync stays in the Lab UI (Personal API key). Lens and eval notes are in [docs/BUGS.md](docs/BUGS.md).
 - **Coach chat:** `LLM_PROVIDER` + Devscale or OpenAI keys in root `.env` (Studio not required).
 - **Studio** (`pnpm agent-studio` on :4021) is only for agent debugging / tool playground — not required for the Lab UI.
 
@@ -149,8 +150,7 @@ EVAL_COACH_URL=https://localhost     pnpm eval:coach   # Docker + Caddy
 ```
 
 When `ANVIA_LENS_*` is configured, eval runs and traces report to Lens
-(`http://localhost:8080`). See `docs/PRD-stridelab.md` for the full plan and
-`docs/BUGS.md` for the Docker TLS egress limitation.
+(`http://localhost:8080`). Docker TLS egress limits are in [docs/BUGS.md](docs/BUGS.md).
 
 ## Data layout
 
@@ -553,7 +553,7 @@ Analyze my readiness for the last 14 days.
 - `packages/agent-lens` — Evals (coach over HTTP, MCP agent), MCP handshake checks, Telegram adapter
 - `packages/garmin-connector` — Local Garmin Connect adapter (Python, stdio)
 - `scripts/` — MCP client config generator
-- `docs/` — PRD, bugs, [going public](docs/GOING-PUBLIC.md)
+- `docs/` — [Product PRD](docs/PRD-garmin-personal-sync.md) · [Going public](docs/GOING-PUBLIC.md) · [Bugs](docs/BUGS.md)
 - `deploy/` — Caddy reverse-proxy config for Docker deployments
 
 ## Privacy & security
