@@ -149,11 +149,6 @@ export async function generateWeeklyBrief(opts?: {
 
   const nextTargets: string[] = [];
   nextTargets.push(insights.next_action);
-  if (overview.forecast_next_week_km != null) {
-    nextTargets.push(
-      `Forecast next week ≈ ${overview.forecast_next_week_km} km / TRIMP ${overview.forecast_next_week_trimp ?? "—"} (model expectation — not a prescription).`,
-    );
-  }
   if (acr.current?.alignment) {
     nextTargets.push(`Volume vs intensity: ${acr.current.alignment}`);
   }

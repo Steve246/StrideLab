@@ -13,10 +13,18 @@ export type ActivityRow = {
   distance_km?: number;
   elevation_gain_m?: number | null;
   avg_hr?: number | null;
+  max_hr?: number | null;
   avg_pace_min_per_km?: number | null;
+  avg_cadence_spm?: number | null;
+  avg_power_watts?: number | null;
+  calories?: number | null;
+  temperature_c?: number | null;
+  vo2max_estimate?: number | null;
+  training_effect_label?: string | null;
   trimp?: number | null;
   load_score?: number | null;
   aerobic_te?: number | null;
+  anaerobic_te?: number | null;
   notes?: string | null;
 };
 

@@ -4,6 +4,7 @@ import type { OverviewInsights } from "@/lib/overviewInsights";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { DailyAnalyzer } from "./DailyAnalyzer";
+import { DeeperInsightsPanel } from "./DeeperInsightsPanel";
 import { RecoverySnapshotPanel } from "./RecoverySnapshotPanel";
 
 /** Overview tab: week KPIs + decision cards (not Load / Weekly / ACR / Best). */
@@ -35,9 +36,6 @@ export function OverviewSummary({
       <section className="border border-border/80 bg-card p-4">
         <p className="text-sm text-muted-foreground">
           This week · {overview.alignment}
-          {overview.forecast_next_week_km != null
-            ? ` · next ≈ ${overview.forecast_next_week_km} km / TRIMP ${overview.forecast_next_week_trimp ?? "—"}`
-            : ""}
         </p>
 
         <div className="mt-3 grid gap-4 sm:grid-cols-3">
@@ -103,7 +101,20 @@ export function OverviewSummary({
         </div>
       </section>
 
+      <section className="grid gap-3 sm:grid-cols-2">
+        <article className="border border-border/80 bg-card p-3.5">
+          <div className="text-xs text-muted-foreground">Marathon</div>
+          <p className="mt-2 text-sm leading-relaxed">{insights.race.marathon}</p>
+        </article>
+        <article className="border border-border/80 bg-card p-3.5">
+          <div className="text-xs text-muted-foreground">Ultra trail</div>
+          <p className="mt-2 text-sm leading-relaxed">{insights.race.ultra}</p>
+        </article>
+      </section>
+
       <RecoverySnapshotPanel recovery={overview.recovery} />
+
+      <DeeperInsightsPanel insights={insights.deeper ?? []} />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <InsightCard

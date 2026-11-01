@@ -579,6 +579,116 @@ async function attachTrimp(activities: ActivityRow[]) {
   });
 }
 
+export type TrackPoint = { lat: number; lon: number };
+
+/** Route for one activity. Empty when Garmin has no polyline. */
+export async function fetchActivityTrack(activityId: string): Promise<TrackPoint[]> {
+  const key = await resolvePersonalApiKey();
+  if (!key) return [];
+  try {
+    const raw = await garminJson(
+      key.apiKey,
+      `/activity-service/activity/${encodeURIComponent(activityId)}/details?maxChartSize=1&maxPolylineSize=800`,
+    );
+    return downsample(extractTrack(raw), 280);
+  } catch {
+    return [];
+  }
+}
+
+function extractTrack(raw: unknown): TrackPoint[] {
+  const found: TrackPoint[] = [];
+  collectGeo(raw, found, 0);
+  return found;
+}
+
+function collectGeo(node: unknown, out: TrackPoint[], depth: number) {
+  if (out.length > 4000 || depth > 8 || node == null) return;
+  if (Array.isArray(node)) {
+    const asPoints = pointsFromArray(node);
+    if (asPoints.length >= 2) {
+      out.push(...asPoints);
+      return;
+    }
+    for (const item of node) collectGeo(item, out, depth + 1);
+    return;
+  }
+  if (typeof node !== "object") return;
+  const rec = node as Record<string, unknown>;
+  if (typeof rec.polyline === "string" && rec.polyline.length > 8) {
+    out.push(...decodePolyline(rec.polyline));
+  }
+  for (const [key, value] of Object.entries(rec)) {
+    if (!/poly|geo|lat|lon|coord/i.test(key)) continue;
+    collectGeo(value, out, depth + 1);
+  }
+}
+
+function pointsFromArray(node: unknown[]): TrackPoint[] {
+  const out: TrackPoint[] = [];
+  for (const item of node) {
+    if (Array.isArray(item) && item.length >= 2 && looksLikeLatLon(item[0], item[1])) {
+      out.push({ lat: item[0] as number, lon: item[1] as number });
+      continue;
+    }
+    if (item && typeof item === "object") {
+      const rec = item as Record<string, unknown>;
+      const lat = num(rec.lat ?? rec.latitude);
+      const lon = num(rec.lon ?? rec.lng ?? rec.longitude);
+      if (lat != null && lon != null && looksLikeLatLon(lat, lon)) out.push({ lat, lon });
+    }
+  }
+  return out;
+}
+
+function looksLikeLatLon(lat: unknown, lon: unknown) {
+  return (
+    typeof lat === "number" &&
+    typeof lon === "number" &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lon) <= 180 &&
+    !(lat === 0 && lon === 0)
+  );
+}
+
+function downsample(points: TrackPoint[], max: number): TrackPoint[] {
+  if (points.length <= max) return points;
+  const step = (points.length - 1) / (max - 1);
+  const out: TrackPoint[] = [];
+  for (let i = 0; i < max; i++) out.push(points[Math.round(i * step)]!);
+  return out;
+}
+
+/** Google encoded polyline (Garmin sometimes returns this). */
+function decodePolyline(encoded: string): TrackPoint[] {
+  const out: TrackPoint[] = [];
+  let index = 0;
+  let lat = 0;
+  let lon = 0;
+  while (index < encoded.length) {
+    let result = 0;
+    let shift = 0;
+    let byte = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+    result = 0;
+    shift = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    lon += result & 1 ? ~(result >> 1) : result >> 1;
+    const point = { lat: lat / 1e5, lon: lon / 1e5 };
+    if (looksLikeLatLon(point.lat, point.lon)) out.push(point);
+  }
+  return out;
+}
+
 function keepRicher(previous: ActivityRow, live: ActivityRow): ActivityRow {
   const merged = { ...previous };
   for (const [key, value] of Object.entries(live) as Array<[keyof ActivityRow, ActivityRow[keyof ActivityRow]]>) {

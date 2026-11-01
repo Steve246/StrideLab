@@ -17,6 +17,7 @@
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
     "dotenv": "^17.4.2",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.45.0",
     "next": "^15.3.3",
     "openai": "^4.104.0",
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@tailwindcss/oxide-linux-x64-gnu": "4.3.3",
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^22.15.21",
     "@types/react": "^19.1.5",
     "@types/react-dom": "^19.1.5",

@@ -24,12 +24,16 @@ Thumbs.db
 *.swp
 *.swo
 
-# Local AI / IDE agent tooling (skills, MCP, caches — keep private)
+# Local-only — safe to merge `dev` → public `main` (non-coders never get these)
 .cursor/
 .opencode/
+**/.cursor/
+**/.opencode/
+*.local
 
-# Local training data (personal Garmin exports, generated JSON, reports)
+# Local training data (personal Garmin exports, generated JSON, API keys, reports)
 packages/agent/data/
+DI_CONNECT/
 
 # pnpm content-addressable store (local cache, never commit)
 .pnpm-store/
@@ -54,6 +58,3 @@ apps/lab/out/
 
 # TypeScript cache
 .cache/
-
-# garmin files
-DI_CONNECT/

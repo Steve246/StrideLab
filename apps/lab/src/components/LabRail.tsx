@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ChartColumn,
   Gauge,
+  History,
   LayoutGrid,
   MessageSquare,
   RefreshCw,
@@ -27,6 +28,7 @@ export type LabTabId =
   | "weekly"
   | "acr"
   | "best"
+  | "summary"
   | "log";
 
 const TABS: Array<{
@@ -39,6 +41,7 @@ const TABS: Array<{
   { id: "weekly", label: "Weekly", icon: ChartColumn },
   { id: "acr", label: "ACR", icon: Activity },
   { id: "best", label: "Best", icon: Award },
+  { id: "summary", label: "Summary", icon: History },
   { id: "log", label: "Log", icon: CalendarDays },
 ];
 
@@ -160,5 +163,6 @@ export const LAB_TAB_TITLES: Record<LabTabId, string> = {
   weekly: "Weekly load",
   acr: "Acute:chronic",
   best: "Your best",
+  summary: "Career summary",
   log: "Activity log",
 };

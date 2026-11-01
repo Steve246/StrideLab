@@ -1,18 +1,16 @@
-# PRD: Garmin Connect Personal API Sync
+# PRD: StrideLab Lab (Personal API + insights)
 
 **Product:** StrideLab Lab (`apps/lab`)  
 **Status:** Shipped  
-**Updated:** 2026-10-24  
-**Parent:** [PRD-stridelab.md](./PRD-stridelab.md)  
-**Garmin docs:** [Personal API FAQ](https://developer.garmin.com/gc-developer-program/personal/personal-faq/), [Swagger](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/)
+**Updated:** 2026-10-26  
+**Garmin docs:** [Personal API FAQ](https://developer.garmin.com/gc-developer-program/personal/personal-faq/), [Swagger](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/)  
+**Also:** [README](../README.md) · [BUGS.md](./BUGS.md) · [GOING-PUBLIC.md](./GOING-PUBLIC.md)
 
-## 1. Summary
+This is the product PRD for Live sync and the dashboard features that read that data.
 
-Live sync uses the official Garmin Connect Personal API. The athlete pastes a
-Personal API key (or sets `GARMIN_PERSONAL_API_KEY`). Lab mints a 24h Bearer
-token and pulls only datasets that feed the dashboard.
+## 1. Live sync
 
-## 2. Configuration
+The athlete pastes a Personal API key (or sets `GARMIN_PERSONAL_API_KEY`). Lab mints a 24h Bearer token and pulls only datasets the dashboard uses. The key is **read-only**. Lab does not send workouts to the watch.
 
 ```env
 GARMIN_LIVE_ENABLED=true
@@ -20,42 +18,64 @@ GARMIN_PERSONAL_API_KEY=
 GARMIN_PERSONAL_SYNC_DAYS=7   # 1–365; ~84–90 for 12-week graphs
 ```
 
-### Key storage (two optional sources)
-
 | Source | Where | Notes |
 | --- | --- | --- |
-| Live sync UI | `packages/agent/data/garmin-personal-key.json` | Owner-only (`0600`), gitignored with `packages/agent/data/` |
-| Env | `GARMIN_PERSONAL_API_KEY` in root `.env` | Manual; `.env` is gitignored |
+| Live sync UI | `packages/agent/data/garmin-personal-key.json` | Owner-only (`0600`), gitignored |
+| Env | `GARMIN_PERSONAL_API_KEY` in root `.env` | Manual; gitignored |
 
-**Precedence:** UI file wins over env. Disconnect in Live sync deletes the file
-only; it does not clear `.env`. The app must **not** auto-write `.env` (Next
-loads env at process start; see [BUG-GARMIN-PERSONAL-002](./BUGS.md)).
-
-Never commit real keys. Prefer either paste-once into `.env` *or* Live sync — if
-both exist, the UI file is what sync uses.
-
-## 3. Dashboard data map (sync scope)
+UI file wins over env. Disconnect deletes the file only, not `.env`. The app does not write `.env`. See [BUG-GARMIN-PERSONAL-002](./BUGS.md).
 
 | Lab file | Used for | Personal API |
 | --- | --- | --- |
-| `activities/activities.json` | Overview, Load, Weekly, ACR, Best, Log | Activity search |
-| `enrichment/sleep.json` | Recovery KPIs, Daily Analyzer | Sleep summaries (≤31d chunks) |
-| `enrichment/daily.json` | RHR, body battery, stress | Daily summaries v2 (≤365d) |
-| `enrichment/health_status.json` | Weekly HRV chart | HRV daily (≤28d chunks) |
+| `activities/activities.json` | Overview, Summary, Log, analysis | Activity search |
+| `enrichment/sleep.json` | Recovery, Daily Analyzer, Summary | Sleep summaries |
+| `enrichment/daily.json` | RHR, body battery, stress | Daily summaries v2 |
+| `enrichment/health_status.json` | HRV (weekly + Summary band) | HRV daily |
 
-**Not synced** (no dashboard consumer): weight, nutrition, SpO2, fitness age,
-cycle, profile, HR zones, FIT download, per-activity workouts, standalone
-steps/stress/hydration/body-battery reports (those fields come from daily
-summaries v2).
+Not synced: weight, nutrition, SpO2, FIT files, per-activity workouts. Soft 4xx return debug curls on `connect.debugRequests`. Keep the four endpoint families to stay under unpublished rate limits.
 
-## 4. Rate-limit notes
+Rail **Resync** uses Live sync when a key is connected, otherwise a valid manual `DI_CONNECT` folder.
 
-Garmin does not publish a numeric quota. Soft 4xx responses return
-`debugRequests` (path, body snippet, curl) and persist on
-`connect.debugRequests`. Keeping only four endpoint families keeps request
-volume low even for 90-day windows.
+## 2. What athletes see (no coding)
+
+| Want | Where |
+| --- | --- |
+| This week + recovery + deeper insight cards | **Overview** |
+| Career totals, hours by sport, RHR / sleep / HRV | **Summary** |
+| One workout + route | **Log** row or **Daily Analyzer** session |
+| Marathon / ultra pointers | **Overview** (two cards under the week totals) |
+| Data in | **Live sync** or **Manual import**, then **Resync** |
+
+Empty states point at Live sync or Manual import. Charts work without an LLM key; coach chat needs one.
+
+## 3. Features
+
+| Feature | Where | What it does |
+| --- | --- | --- |
+| Deeper week insights | Overview | Load vs recovery, easy-day share, efficiency, consistency, sleep–stress, plus a glossary |
+| Recovery snapshot | Overview and Load | Latest complete wellness day (skips an empty today), including HRV |
+| Marathon pointer | Overview | Longest run in 6 weeks, and whether it is near a 28–32 km long run |
+| Ultra trail pointer | Overview | 28-day run climb, and metres of climb per km on that long run |
+| Activity map | Log or Daily Analyzer | GPS track from `activity/{id}/details` (`geoPolylineDTO.polyline`) drawn on an OpenStreetMap basemap. Dark dot is the start, amber is the finish |
+| Effort load | Same panel | Banister TRIMP, TRIMP per km versus similar-distance runs, plus aerobic and anaerobic training effect |
+| Activity signals | Same panel | Climb, cadence, power, max HR, training effect, calories, temperature, VO2, and similar-distance pace/TRIMP |
+| Career summary | Summary | Totals, Everest-style climb, hours by sport and month, 90-day RHR / sleep / HRV band |
+
+Story-card download and the 4-week load forecast are not features. The forecast was a maintenance projection, not a plan.
+
+Opening an activity calls `GET /api/activity/[id]/analysis`, which reads local JSON and then the Personal API polyline when a key is connected.
+
+## 4. Not in this release
+
+- Story / TikTok image download.
+- FIT file download and GPS replay video.
+- Coverage heatmap and Body Battery event timeline.
+- Browser setup wizard (keys are still `.env` or Live sync).
+- Writing anything back to Garmin.
 
 ## 5. Related bugs
 
-- [BUG-GARMIN-PERSONAL-001](./BUGS.md) — `/weight/all` 400; fixed by dropping unused weight sync.
-- [BUG-GARMIN-PERSONAL-002](./BUGS.md) — dual key stores (UI file overrides `.env`); accepted, no auto-`.env` write.
+- [BUG-GARMIN-PERSONAL-001](./BUGS.md) — unused `/weight/all` 400; endpoint dropped.
+- [BUG-GARMIN-PERSONAL-002](./BUGS.md) — UI key file overrides `.env`.
+- [BUG-LAB-003](./BUGS.md) — rail Resync follows the active source.
+- [BUG-LAB-005](./BUGS.md) — recovery snapshot skips an empty today.

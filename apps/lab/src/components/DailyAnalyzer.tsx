@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import type { ActivityAnalysis } from "@/lib/activityAnalysis";
 import type { DailyAnalyzerDay, TimelineSegment } from "@/lib/insights";
+import { ActivityAnalysisPanel } from "./ActivityAnalysisPanel";
 import { formatPace, sessionPace } from "@/lib/loadMath";
 
 const SEGMENT_COLORS: Record<TimelineSegment["kind"], string> = {
@@ -64,7 +66,21 @@ function Track({
 export function DailyAnalyzer({ days }: { days: DailyAnalyzerDay[] }) {
   const defaultIdx = Math.max(0, days.length - 1);
   const [idx, setIdx] = useState(defaultIdx);
+  const [analysis, setAnalysis] = useState<ActivityAnalysis | null>(null);
   const day = days[idx] ?? days[days.length - 1];
+
+  const openAnalysis = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(
+        `/api/activity/${encodeURIComponent(id)}/analysis`,
+      );
+      const data = (await res.json()) as ActivityAnalysis & { error?: string };
+      if (!res.ok) return;
+      setAnalysis(data);
+    } catch {
+      // ignore — table path shows errors
+    }
+  }, []);
 
   const sleepParts = useMemo(() => {
     if (!day) return [];
@@ -108,11 +124,18 @@ export function DailyAnalyzer({ days }: { days: DailyAnalyzerDay[] }) {
     <section className="panel">
       <h2>Daily Analyzer</h2>
       <p className="note">
-        Sleep and workouts on separate tracks. Activity times use{" "}
-        {day.time_zone ?? "athlete timezone"} (set{" "}
-        <code>ATHLETE_TIMEZONE</code> to change). Sleep stages end near wake /
-        first morning activity when onset is not in enrichment.
+        Sleep and workouts on separate tracks. Click a session for analysis and
+        Story download. Times use {day.time_zone ?? "athlete timezone"} (set{" "}
+        <code>ATHLETE_TIMEZONE</code> to change).
       </p>
+      {analysis ? (
+        <div className="mb-4">
+          <ActivityAnalysisPanel
+            analysis={analysis}
+            onClose={() => setAnalysis(null)}
+          />
+        </div>
+      ) : null}
 
       <div className="da-day-nav">
         <button
@@ -215,26 +238,37 @@ export function DailyAnalyzer({ days }: { days: DailyAnalyzerDay[] }) {
                 const seg = workoutSegs.find(
                   (s) => s.activity_id && s.activity_id === a.activity_id,
                 );
+                const id = a.activity_id;
                 return (
-                  <li key={a.activity_id ?? `${a.date}-${a.sport}`}>
-                    <strong>
-                      {seg?.start_clock ?? "—"} · {a.sport ?? "activity"}
-                    </strong>
-                    <span>
-                      {a.distance_km != null ? `${a.distance_km} km` : "—"} ·{" "}
-                      {a.duration_min != null
-                        ? `${Math.round(a.duration_min)} min`
-                        : "—"}
-                      {sessionPace(a) != null
-                        ? ` · ${formatPace(sessionPace(a))} /km`
-                        : ""}
-                      {a.avg_hr != null
-                        ? ` · ${Math.round(a.avg_hr)} bpm`
-                        : ""}
-                      {a.trimp != null || a.load_score != null
-                        ? ` · TRIMP ${a.trimp ?? a.load_score}`
-                        : ""}
-                    </span>
+                  <li key={id ?? `${a.date}-${a.sport}`}>
+                    <button
+                      type="button"
+                      className="da-act-btn"
+                      disabled={!id}
+                      onClick={() => {
+                        if (id) void openAnalysis(id);
+                      }}
+                    >
+                      <strong>
+                        {seg?.start_clock ?? "—"} · {a.sport ?? "activity"}
+                      </strong>
+                      <span>
+                        {a.distance_km != null ? `${a.distance_km} km` : "—"} ·{" "}
+                        {a.duration_min != null
+                          ? `${Math.round(a.duration_min)} min`
+                          : "—"}
+                        {sessionPace(a) != null
+                          ? ` · ${formatPace(sessionPace(a))} /km`
+                          : ""}
+                        {a.avg_hr != null
+                          ? ` · ${Math.round(a.avg_hr)} bpm`
+                          : ""}
+                        {a.trimp != null || a.load_score != null
+                          ? ` · TRIMP ${a.trimp ?? a.load_score}`
+                          : ""}
+                        {id ? " · Open analysis" : ""}
+                      </span>
+                    </button>
                   </li>
                 );
               })}
